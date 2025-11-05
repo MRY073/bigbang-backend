@@ -18,11 +18,11 @@ export class AuthController {
 
   @Post('login')
   login(@Body() body: LoginDto, @Res() res: Response) {
-    const { username, password } = body || {};
+    const { username, password } = body || {}; 
     if (!this.authService.validateCredentials(username, password)) {
       return res.status(HttpStatus.OK).json({
         success: false,
-        message: '用户名或密码错误',
+        message: '用户名或密码错误111',
       });
     }
     // if (!this.authService.validateCredentials(username, password)) {

@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from './auth/auth.module'; // <- 添加这一行
+import { AuthModule } from './auth/auth.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuthModule } from './auth/auth.module'; // <- 添加这一行
       synchronize: true, // 开发阶段自动创建表
     }),
     AuthModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],
