@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { UploadModule } from './upload/upload.module';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UploadModule } from './upload/upload.module';
       autoLoadEntities: true,
       synchronize: true, // 开发阶段自动创建表
     }),
+    DatabaseModule, // MySQL 数据库操作模块
     AuthModule,
     UploadModule,
   ],

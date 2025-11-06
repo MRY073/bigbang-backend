@@ -27,7 +27,6 @@ export class UploadController {
   ) {
     console.log('进入上传函数');
     console.log('接收到的文件数量:', files?.length || 0);
-    console.log('文件列表:', files);
     console.log('其他参数:', body);
 
     // 验证文件是否存在
@@ -48,15 +47,8 @@ export class UploadController {
     }
 
     try {
-      // TODO: 伪代码 - 调用服务保存多个文件和信息到数据库（未来启用时取消注释）
-      // const uploadEntities = await this.uploadService.saveMultipleUploads(
-      //   files,
-      //   type,
-      //   shop,
-      // );
-
-      // 临时实现：返回模拟数据（用于调试）
-      const uploadEntities = this.uploadService.saveMultipleUploads(
+      // 调用服务保存文件和处理数据
+      const uploadEntities = await this.uploadService.saveMultipleUploads(
         files,
         type,
         shop,
@@ -64,16 +56,8 @@ export class UploadController {
 
       return res.status(HttpStatus.OK).json({
         success: true,
-        message: `上传成功（调试模式：未保存到数据库），共上传 ${uploadEntities.length} 个文件`,
-        data: uploadEntities.map((entity) => ({
-          id: entity.id,
-          originalName: entity.originalName,
-          filePath: entity.filePath,
-          type: entity.type,
-          shop: entity.shop,
-          fileSize: entity.fileSize,
-          createdAt: entity.createdAt,
-        })),
+        message: `上传成功，共处理 ${uploadEntities.length} 条记录`,
+        data: uploadEntities,
       });
     } catch (error) {
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
