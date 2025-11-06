@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { UploadModule } from './upload/upload.module';
+import { ProductsModule } from './products/products.module';
 // import { StatsModule } from './stats/stats.module';
 import { DatabaseModule } from './database/database.module';
 
@@ -22,6 +23,7 @@ import { DatabaseModule } from './database/database.module';
     DatabaseModule, // MySQL 数据库操作模块
     AuthModule,
     UploadModule,
+    ProductsModule,
     // StatsModule,
   ],
   controllers: [AppController],

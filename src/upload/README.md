@@ -6,6 +6,8 @@
 
 ## 接口说明
 
+### 文件上传接口
+
 **接口地址**: `POST /upload`
 
 **请求格式**: FormData
@@ -55,6 +57,8 @@
 ### 其他 type
 
 其他类型的上传按照默认逻辑处理（文件存储）。
+
+> **注意**：商品查询和阶段管理接口已迁移到 `products` 模块，请参考 `src/products/README.md` 文档。
 
 ## 文件格式
 
@@ -139,11 +143,33 @@ CREATE TABLE product_items (
   product_name VARCHAR(255) NOT NULL COMMENT '商品名称',
   product_image VARCHAR(500) DEFAULT NULL COMMENT '商品图片链接',
   shop_name VARCHAR(255) DEFAULT NULL COMMENT '店铺名称',
+  testing_stage_start DATETIME DEFAULT NULL COMMENT '测款阶段开始时间',
+  testing_stage_end DATETIME DEFAULT NULL COMMENT '测款阶段结束时间',
+  potential_stage_start DATETIME DEFAULT NULL COMMENT '潜力阶段开始时间',
+  potential_stage_end DATETIME DEFAULT NULL COMMENT '潜力阶段结束时间',
+  product_stage_start DATETIME DEFAULT NULL COMMENT '成品阶段开始时间',
+  product_stage_end DATETIME DEFAULT NULL COMMENT '成品阶段结束时间',
+  abandoned_stage_start DATETIME DEFAULT NULL COMMENT '放弃阶段开始时间',
+  abandoned_stage_end DATETIME DEFAULT NULL COMMENT '放弃阶段结束时间',
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (id),
   KEY idx_product_id (product_id),
   KEY idx_shop_name (shop_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺商品信息表';
+```
+
+**新增字段说明**（需要执行 ALTER TABLE 添加）：
+
+```sql
+ALTER TABLE product_items 
+  ADD COLUMN testing_stage_start DATETIME DEFAULT NULL COMMENT '测款阶段开始时间',
+  ADD COLUMN testing_stage_end DATETIME DEFAULT NULL COMMENT '测款阶段结束时间',
+  ADD COLUMN potential_stage_start DATETIME DEFAULT NULL COMMENT '潜力阶段开始时间',
+  ADD COLUMN potential_stage_end DATETIME DEFAULT NULL COMMENT '潜力阶段结束时间',
+  ADD COLUMN product_stage_start DATETIME DEFAULT NULL COMMENT '成品阶段开始时间',
+  ADD COLUMN product_stage_end DATETIME DEFAULT NULL COMMENT '成品阶段结束时间',
+  ADD COLUMN abandoned_stage_start DATETIME DEFAULT NULL COMMENT '放弃阶段开始时间',
+  ADD COLUMN abandoned_stage_end DATETIME DEFAULT NULL COMMENT '放弃阶段结束时间';
 ```
 
 **字段说明**:
@@ -155,6 +181,14 @@ CREATE TABLE product_items (
 | product_name | VARCHAR(255) | 商品名称 | NOT NULL |
 | product_image | VARCHAR(500) | 商品图片链接 | NULL |
 | shop_name | VARCHAR(255) | 店铺名称 | NULL, 索引 |
+| testing_stage_start | DATETIME | 测款阶段开始时间 | NULL |
+| testing_stage_end | DATETIME | 测款阶段结束时间 | NULL |
+| potential_stage_start | DATETIME | 潜力阶段开始时间 | NULL |
+| potential_stage_end | DATETIME | 潜力阶段结束时间 | NULL |
+| product_stage_start | DATETIME | 成品阶段开始时间 | NULL |
+| product_stage_end | DATETIME | 成品阶段结束时间 | NULL |
+| abandoned_stage_start | DATETIME | 放弃阶段开始时间 | NULL |
+| abandoned_stage_end | DATETIME | 放弃阶段结束时间 | NULL |
 | updated_at | TIMESTAMP | 更新时间 | 自动更新 |
 
 **索引**:
