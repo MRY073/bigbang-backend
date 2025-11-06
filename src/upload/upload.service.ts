@@ -35,11 +35,6 @@ export class UploadService {
     type: string,
     shop: string,
   ): Promise<any[]> {
-    console.log(`开始处理 ${files.length} 个文件的上传`);
-    console.log('上传参数:', { type, shop });
-
-    console.log(type);
-    console.log(type === 'productID');
     // 根据 type 类型进行不同的处理
     if (type === 'productID') {
       // 处理商品ID类型的上传

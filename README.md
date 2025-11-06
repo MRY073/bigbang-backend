@@ -96,3 +96,37 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+
+每日数据表
+
+CREATE TABLE daily_product_stats (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id VARCHAR(50),
+    product_name VARCHAR(255),
+    current_item_status VARCHAR(50),
+    visitors INT,
+    pageviews INT,
+    bounce_visitors INT,
+    bounce_rate FLOAT,
+    search_clickers INT,
+    likes INT,
+    cart_visitors INT,
+    cart_items INT,
+    cart_conversion FLOAT,
+    ordered_buyers INT,
+    ordered_items INT,
+    ordered_sales DECIMAL(10,2),
+    ordered_conversion FLOAT,
+    confirmed_buyers INT,
+    confirmed_items INT,
+    confirmed_sales DECIMAL(10,2),
+    confirmed_conversion FLOAT,
+    final_conversion FLOAT,
+    shop VARCHAR(100),
+    date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    INDEX idx_product_shop_date (product_id, shop, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
