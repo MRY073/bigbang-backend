@@ -25,10 +25,6 @@ export class UploadController {
     @Body() body: UploadDto,
     @Res() res: Response,
   ) {
-    console.log('进入上传函数');
-    console.log('接收到的文件数量:', files?.length || 0);
-    console.log('其他参数:', body);
-
     // 验证文件是否存在
     if (!files || files.length === 0) {
       return res.status(HttpStatus.BAD_REQUEST).json({
@@ -56,7 +52,7 @@ export class UploadController {
 
       return res.status(HttpStatus.OK).json({
         success: true,
-        message: `上传成功，共处理 ${uploadEntities.length} 条记录`,
+        message: '上传成功',
         data: uploadEntities,
       });
     } catch (error) {

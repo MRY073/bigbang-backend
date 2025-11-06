@@ -130,3 +130,60 @@ CREATE TABLE daily_product_stats (
     
     INDEX idx_product_shop_date (product_id, shop, date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+
+数据库基础操作代码
+
+要 查看本地 MySQL 数据库有哪些、有哪些表，最常用的方式有三种：
+
+✅ 方式一：命令行（MySQL CLI）
+
+进入 MySQL：
+
+mysql -u root -p
+
+
+输密码后查看所有数据库：
+
+SHOW DATABASES;
+
+
+选择你的数据库：
+
+USE your_database_name;
+
+
+查看该数据库下所有表：
+
+SHOW TABLES;
+
+
+查看某个表结构：
+
+DESCRIBE table_name;
+
+
+或
+
+SHOW CREATE TABLE table_name;
+
+
+如果你想在 MySQL 中查看某个表的前 3 行数据，可以使用：
+
+SELECT * FROM 表名 LIMIT 3;
+
+
+比如你要查看 product_items 表：
+
+SELECT * FROM product_items LIMIT 3;
+
+
+如果还想让结果按某个字段排序，比如按 id 升序：
+
+SELECT * FROM product_items ORDER BY id ASC LIMIT 3;
+
+SELECT * FROM daily_product_stats LIMIT 3;
+daily_product_stats
+
+需要的话我也可以帮你封装常用查询指令，随时告诉我 👍
