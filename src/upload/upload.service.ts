@@ -49,6 +49,12 @@ export class UploadService {
       return await this.handleDailyStatsUpload(files, shop);
     }
 
+    if (type === 'ad') {
+      // 处理广告数据类型的上传
+      console.log('处理广告数据类型的上传-ad');
+      return await this.handleAdUpload(files, shop);
+    }
+
     console.log('其他类型的处理-default');
 
     // 其他类型的处理（默认处理）
@@ -947,6 +953,454 @@ export class UploadService {
       });
 
       const insertSql = `INSERT INTO daily_product_stats (${columns.join(', ')}) VALUES ${valuePlaceholders}`;
+      const [insertResult] = await connection.execute(insertSql, values);
+      const insertResultTyped = insertResult as {
+        affectedRows: number;
+        insertId: number;
+      };
+
+      return {
+        insertedCount: insertResultTyped.affectedRows || 0,
+      };
+    });
+
+    return {
+      insertedCount: result.insertedCount,
+      message: `成功上传 ${result.insertedCount} 条数据`,
+    };
+  }
+
+  /**
+   * 验证广告文件名格式
+   * 格式：Shopee广告-整体-数据-YYYY_MM_DD-YYYY_MM_DD
+   * 两个日期必须相同且是一天
+   * 注意：如果中文出现编码问题，只校验日期格式部分
+   */
+  validateAdFileName(fileName: string): {
+    valid: boolean;
+    date?: string;
+    error?: string;
+  } {
+    console.log('=== 文件名验证调试信息 ===');
+    console.log('原始文件名:', fileName);
+    console.log('文件名长度:', fileName.length);
+    console.log('文件名字节:', Buffer.from(fileName, 'utf-8').toString('hex'));
+
+    // 尝试解码文件名（如果被URL编码）
+    let decodedFileName = fileName;
+    try {
+      // 尝试URL解码
+      decodedFileName = decodeURIComponent(fileName);
+      if (decodedFileName !== fileName) {
+        console.log('文件名被URL编码，已解码:', decodedFileName);
+      }
+    } catch {
+      // 解码失败，使用原始文件名
+      console.log('文件名URL解码失败，使用原始文件名');
+    }
+
+    // 移除文件扩展名（如果有）
+    const nameWithoutExt = decodedFileName.replace(/\.[^.]+$/, '');
+    console.log('移除扩展名后:', nameWithoutExt);
+
+    // 尝试匹配日期部分：直接查找日期格式，不校验中文前缀
+    // 格式：YYYY_MM_DD-YYYY_MM_DD
+    const datePattern = /(\d{4}_\d{2}_\d{2})-(\d{4}_\d{2}_\d{2})/;
+    const dateMatch = nameWithoutExt.match(datePattern);
+
+    if (!dateMatch) {
+      console.log('❌ 未找到日期格式');
+      return {
+        valid: false,
+        error:
+          '文件名格式错误，必须包含日期格式：YYYY_MM_DD-YYYY_MM_DD（例如：2025_11_03-2025_11_03）',
+      };
+    }
+
+    console.log('✅ 找到日期格式:', dateMatch[0]);
+
+    const date1 = dateMatch[1]; // YYYY_MM_DD
+    const date2 = dateMatch[2]; // YYYY_MM_DD
+
+    console.log('日期1:', date1);
+    console.log('日期2:', date2);
+
+    // 验证两个日期是否相同
+    if (date1 !== date2) {
+      console.log('❌ 两个日期不相同');
+      return {
+        valid: false,
+        error: '文件名中的两个日期必须相同',
+      };
+    }
+
+    // 解析日期 YYYY_MM_DD
+    const dateParts = date1.split('_');
+    if (dateParts.length !== 3) {
+      return {
+        valid: false,
+        error: '日期格式错误，应为：YYYY_MM_DD',
+      };
+    }
+
+    const year = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10);
+    const day = parseInt(dateParts[2], 10);
+
+    // 验证日期数值范围
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      return {
+        valid: false,
+        error: '日期格式错误，日期必须为数字',
+      };
+    }
+
+    // 验证日期格式是否正确
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return {
+        valid: false,
+        error: '文件名中的日期无效',
+      };
+    }
+
+    // 转换为 YYYY-MM-DD 格式
+    const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    console.log('✅ 文件名验证通过，解析日期:', formattedDate);
+    console.log('=== 文件名验证结束 ===\n');
+
+    return {
+      valid: true,
+      date: formattedDate,
+    };
+  }
+
+  /**
+   * 处理广告数据上传
+   */
+  async handleAdUpload(
+    files: Express.Multer.File[],
+    shop: string,
+  ): Promise<any[]> {
+    console.log('=== handleAdUpload 函数开始执行 ===');
+    console.log('接收到的文件数量:', files?.length || 0);
+    console.log('店铺名称:', shop);
+    console.log('文件列表:', files?.map((f) => f.originalname) || []);
+
+    // 第一步：验证所有文件名格式（在所有逻辑之前）
+    console.log('\n--- 第一步：开始验证所有文件名格式 ---');
+    const fileValidations: Array<{
+      file: Express.Multer.File;
+      validation: { valid: boolean; date?: string; error?: string };
+    }> = [];
+
+    for (const file of files) {
+      console.log(`验证文件: ${file.originalname}`);
+      const validation = this.validateAdFileName(file.originalname);
+      console.log(`验证结果:`, validation);
+      fileValidations.push({ file, validation });
+
+      // 如果有任何文件验证失败，立即返回错误
+      if (!validation.valid) {
+        console.error(
+          `❌ 文件名验证失败: ${file.originalname} - ${validation.error}`,
+        );
+        throw new Error(
+          `文件名格式错误：${file.originalname} - ${validation.error}`,
+        );
+      }
+      console.log(
+        `✅ 文件名验证通过: ${file.originalname}, 解析日期: ${validation.date}`,
+      );
+    }
+
+    console.log('✅ 所有文件名验证通过，共', fileValidations.length, '个文件');
+
+    // 第二步：所有文件名验证通过后，才开始处理数据
+    console.log('\n--- 第二步：开始处理文件数据 ---');
+    const results: any[] = [];
+
+    for (let i = 0; i < fileValidations.length; i++) {
+      const { file, validation } = fileValidations[i];
+      console.log(
+        `\n处理第 ${i + 1}/${fileValidations.length} 个文件: ${file.originalname}`,
+      );
+      console.log(`文件大小: ${file.size} 字节`);
+      console.log(`文件类型: ${file.mimetype}`);
+      console.log(`解析出的日期: ${validation.date}`);
+
+      try {
+        console.log(`开始调用 uploadAdStats 处理文件: ${file.originalname}`);
+        // 解析 CSV 并上传数据
+        const result = await this.uploadAdStats(file, shop, validation.date!);
+
+        console.log(`✅ 文件处理成功: ${file.originalname}`);
+        console.log(`处理结果:`, result);
+
+        results.push({
+          fileName: file.originalname,
+          success: true,
+          ...result,
+        });
+
+        console.log(`当前已处理结果数: ${results.length}`);
+      } catch (error) {
+        console.error(`❌ 处理文件 ${file.originalname} 时出错:`);
+        console.error('错误详情:', error);
+        throw error; // 抛出错误，让上层处理
+      }
+    }
+
+    console.log('\n=== handleAdUpload 函数执行完成 ===');
+    console.log(`总共处理了 ${results.length} 个文件`);
+    console.log('最终结果:', results);
+
+    return results;
+  }
+
+  /**
+   * 解析广告统计数据 CSV 文件
+   * 第1-7行为无用行，直接删除
+   * 第8行是标题行
+   */
+  private parseAdStatsCSV(
+    content: string,
+    shop: string,
+    date: string,
+  ): Array<Record<string, any>> {
+    // 不过滤空行，保持行号对应关系
+    const lines = content.split('\n');
+    if (lines.length < 8) {
+      throw new Error(
+        'CSV 文件行数不足，至少需要8行（前7行无用，第8行是标题）',
+      );
+    }
+
+    // 跳过前7行，第8行（索引7）是标题行
+    const headerLine = lines[7]?.trim();
+    if (!headerLine) {
+      throw new Error('CSV 文件第8行（标题行）为空');
+    }
+    const headers = headerLine.split(',').map((h) => h.trim());
+
+    console.log('广告CSV标题行:', headers);
+
+    // 查找字段索引（精确匹配）
+    const getIndex = (possibleNames: string[]): number => {
+      for (const name of possibleNames) {
+        const index = headers.findIndex(
+          (h) => h.trim().toLowerCase() === name.trim().toLowerCase(),
+        );
+        if (index !== -1) return index;
+      }
+      return -1;
+    };
+
+    // 定义字段映射（根据用户提供的标题）
+    const adNameIndex = getIndex(['广告名称']);
+    const statusIndex = getIndex(['状态']);
+    const adTypeIndex = getIndex(['广告类型']);
+    const productIdIndex = getIndex(['商品编号']);
+    const creationIndex = getIndex(['创作']);
+    const biddingMethodIndex = getIndex(['竞价方式']);
+    const placementIndex = getIndex(['版位']);
+    const startDateIndex = getIndex(['开始日期']);
+    const endDateIndex = getIndex(['结束日期']);
+    const impressionsIndex = getIndex(['展示次数']);
+    const clicksIndex = getIndex(['点击数']);
+    const clickRateIndex = getIndex(['点击率']);
+    const conversionsIndex = getIndex(['转化']);
+    const directConversionsIndex = getIndex(['直接转化']);
+    const conversionRateIndex = getIndex(['转化率']);
+    const directConversionRateIndex = getIndex(['直接转化率']);
+    const costPerConversionIndex = getIndex(['每转化成本']);
+    const costPerDirectConversionIndex = getIndex(['每一直接转化的成本']);
+    const itemsSoldIndex = getIndex(['商品已出售']);
+    const directItemsSoldIndex = getIndex(['直接已售商品']);
+    const salesAmountIndex = getIndex(['销售金额']);
+    const directSalesAmountIndex = getIndex(['直接销售金额']);
+    const spendIndex = getIndex(['花费']);
+    const roasIndex = getIndex(['广告支出回报率']);
+    const directRoasIndex = getIndex(['直接广告支出回报率']);
+    const adSalesCostIndex = getIndex(['广告销售成本']);
+    const directAdSalesCostIndex = getIndex(['直接广告销售成本']);
+
+    // 验证必需字段
+    if (productIdIndex === -1) {
+      throw new Error('CSV 文件必须包含"商品编号"列');
+    }
+
+    // 解析数据行（从第9行开始，索引8）
+    const parsedRows: Array<Record<string, any>> = [];
+    lines.slice(8).forEach((line, index) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return; // 跳过空行
+
+      const values = trimmedLine.split(',').map((v) => v.trim());
+
+      // 获取字段值（如果索引存在）
+      const getValue = (index: number): string | null => {
+        if (index === -1 || index >= values.length) return null;
+        const val = values[index]?.trim();
+        return val || null;
+      };
+
+      // 解析数值字段
+      const parseNumber = (value: string | null): number | null => {
+        if (!value || value === '' || value === '-') return null;
+        const num = parseFloat(value);
+        return isNaN(num) ? null : num;
+      };
+
+      const rowData: Record<string, any> = {
+        ad_name: getValue(adNameIndex),
+        status: getValue(statusIndex),
+        ad_type: getValue(adTypeIndex),
+        product_id: getValue(productIdIndex),
+        creation: getValue(creationIndex),
+        bidding_method: getValue(biddingMethodIndex),
+        placement: getValue(placementIndex),
+        start_date: getValue(startDateIndex),
+        end_date: getValue(endDateIndex),
+        impressions: parseNumber(getValue(impressionsIndex)),
+        clicks: parseNumber(getValue(clicksIndex)),
+        click_rate: parseNumber(getValue(clickRateIndex)),
+        conversions: parseNumber(getValue(conversionsIndex)),
+        direct_conversions: parseNumber(getValue(directConversionsIndex)),
+        conversion_rate: parseNumber(getValue(conversionRateIndex)),
+        direct_conversion_rate: parseNumber(
+          getValue(directConversionRateIndex),
+        ),
+        cost_per_conversion: parseNumber(getValue(costPerConversionIndex)),
+        cost_per_direct_conversion: parseNumber(
+          getValue(costPerDirectConversionIndex),
+        ),
+        items_sold: parseNumber(getValue(itemsSoldIndex)),
+        direct_items_sold: parseNumber(getValue(directItemsSoldIndex)),
+        sales_amount: parseNumber(getValue(salesAmountIndex)),
+        direct_sales_amount: parseNumber(getValue(directSalesAmountIndex)),
+        spend: parseNumber(getValue(spendIndex)),
+        roas: parseNumber(getValue(roasIndex)),
+        direct_roas: parseNumber(getValue(directRoasIndex)),
+        ad_sales_cost: parseNumber(getValue(adSalesCostIndex)),
+        direct_ad_sales_cost: parseNumber(getValue(directAdSalesCostIndex)),
+        shop,
+        date,
+      };
+
+      // 验证必需字段
+      if (!rowData.product_id) {
+        throw new Error(`第 ${index + 9} 行的商品编号不能为空`);
+      }
+
+      parsedRows.push(rowData);
+    });
+
+    return parsedRows;
+  }
+
+  /**
+   * 上传广告统计数据
+   * 使用事务：先删除旧数据，再批量插入新数据
+   */
+  async uploadAdStats(
+    file: Express.Multer.File,
+    shop: string,
+    date: string,
+  ): Promise<{ insertedCount: number; message: string }> {
+    console.log('已经进入 uploadAdStats 函数');
+    console.log('文件类型:', file.mimetype);
+    console.log('文件名:', file.originalname);
+
+    // 解析 CSV 文件
+    const fileContent = file.buffer.toString('utf-8');
+    const data = this.parseAdStatsCSV(fileContent, shop, date);
+
+    if (data.length === 0) {
+      throw new Error('文件中没有有效数据');
+    }
+
+    console.log(`解析到 ${data.length} 条广告数据`);
+
+    // 使用事务处理删除和插入
+    const result = await this.mysqlService.transaction(async (connection) => {
+      // 1. 查询是否存在相同 shop 和 date 的数据
+      const [existingRows] = await connection.query(
+        'SELECT COUNT(*) as count FROM ad_stats WHERE shop = ? AND date = ?',
+        [shop, date],
+      );
+
+      // 2. 如果存在，删除旧数据
+      const existing = existingRows as Array<{ count: number }>;
+      if (existing && existing.length > 0) {
+        const count = existing[0]?.count || 0;
+        if (count > 0) {
+          console.log(`删除 ${count} 条旧数据 (shop: ${shop}, date: ${date})`);
+          await connection.execute(
+            'DELETE FROM ad_stats WHERE shop = ? AND date = ?',
+            [shop, date],
+          );
+        }
+      }
+
+      // 3. 批量插入新数据
+      if (data.length === 0) {
+        return { insertedCount: 0 };
+      }
+
+      // 构建批量插入 SQL
+      const columns = [
+        'ad_name',
+        'status',
+        'ad_type',
+        'product_id',
+        'creation',
+        'bidding_method',
+        'placement',
+        'start_date',
+        'end_date',
+        'impressions',
+        'clicks',
+        'click_rate',
+        'conversions',
+        'direct_conversions',
+        'conversion_rate',
+        'direct_conversion_rate',
+        'cost_per_conversion',
+        'cost_per_direct_conversion',
+        'items_sold',
+        'direct_items_sold',
+        'sales_amount',
+        'direct_sales_amount',
+        'spend',
+        'roas',
+        'direct_roas',
+        'ad_sales_cost',
+        'direct_ad_sales_cost',
+        'shop',
+        'date',
+      ];
+
+      const placeholders = columns.map(() => '?').join(', ');
+      const values: any[] = [];
+
+      // 构建 VALUES 部分
+      const valuePlaceholders = data.map(() => `(${placeholders})`).join(', ');
+
+      // 收集所有值
+      data.forEach((item) => {
+        columns.forEach((col) => {
+          const value: unknown = item[col];
+          values.push(value !== undefined && value !== null ? value : null);
+        });
+      });
+
+      const insertSql = `INSERT INTO ad_stats (${columns.join(', ')}) VALUES ${valuePlaceholders}`;
       const [insertResult] = await connection.execute(insertSql, values);
       const insertResultTyped = insertResult as {
         affectedRows: number;
