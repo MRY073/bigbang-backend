@@ -13,6 +13,7 @@ interface UpsertProductResult {
   product_id: string;
   product_name: string;
   shop_name: string;
+  shop_id: string;
   affectedRows?: number;
 }
 
@@ -24,9 +25,15 @@ export class UploadService {
   async saveUpload(
     file: Express.Multer.File,
     type: string,
-    shop: string,
+    shopName: string,
+    shopID: string,
   ): Promise<any> {
-    const results = await this.saveMultipleUploads([file], type, shop);
+    const results = await this.saveMultipleUploads(
+      [file],
+      type,
+      shopName,
+      shopID,
+    );
     return results[0];
   }
 
@@ -34,31 +41,32 @@ export class UploadService {
   async saveMultipleUploads(
     files: Express.Multer.File[],
     type: string,
-    shop: string,
+    shopName: string,
+    shopID: string,
   ): Promise<any[]> {
     // 根据 type 类型进行不同的处理
     if (type === 'productID') {
       // 处理商品ID类型的上传
       console.log('处理商品ID类型的上传-productID');
-      return await this.handleProductIDUpload(files, shop);
+      return await this.handleProductIDUpload(files, shopName, shopID);
     }
 
     if (type === 'daily') {
       // 处理每日统计数据类型的上传
       console.log('处理每日统计数据类型的上传-daily');
-      return await this.handleDailyStatsUpload(files, shop);
+      return await this.handleDailyStatsUpload(files, shopName, shopID);
     }
 
     if (type === 'ad') {
       // 处理广告数据类型的上传
       console.log('处理广告数据类型的上传-ad');
-      return await this.handleAdUpload(files, shop);
+      return await this.handleAdUpload(files, shopName);
     }
 
     console.log('其他类型的处理-default');
 
     // 其他类型的处理（默认处理）
-    return this.handleDefaultUpload(files, type, shop);
+    return this.handleDefaultUpload(files, type, shopName);
   }
 
   /**
@@ -68,9 +76,10 @@ export class UploadService {
   async handleProductIDUpload(
     files: Express.Multer.File[],
     shopName: string,
+    shopID: string,
   ): Promise<any[]> {
     const results: any[] = [];
-    console.log('进入函数handleProductIDUpload', shopName);
+    console.log('进入函数handleProductIDUpload', shopName, shopID);
     // 处理单个文件
     const file = files[0];
     console.log('file', file);
@@ -83,6 +92,7 @@ export class UploadService {
       for (const product of productData) {
         const result: UpsertProductResult = await this.upsertProductItem(
           shopName,
+          shopID,
           product,
         );
         results.push(result);
@@ -112,6 +122,20 @@ export class UploadService {
       throw new Error('CSV 文件为空');
     }
 
+    // 辅助函数：去除两侧的双引号（支持只有开头或只有结尾的情况）
+    const removeQuotes = (str: string): string => {
+      if (!str) return str;
+      let result = str.trim();
+      // 循环去除开头和结尾的双引号，直到没有双引号为止
+      while (result.startsWith('"')) {
+        result = result.slice(1);
+      }
+      while (result.endsWith('"')) {
+        result = result.slice(0, -1);
+      }
+      return result.trim();
+    };
+
     // 第一行是表头：产品ID,产品名称,产品图片
     const headerLine = lines[0].trim();
     const headers = headerLine.split(',').map((h) => h.trim());
@@ -137,17 +161,24 @@ export class UploadService {
     // 解析数据行
     return lines.slice(1).map((line, index) => {
       const values = line.split(',').map((v) => v.trim());
-      const productId = values[productIdIndex].trim() || '';
-      const productName = values[productNameIndex] || '';
 
-      // 处理产品图片：如果有多个链接（用逗号分隔），只取第一个
+      // 处理产品ID：去除两侧双引号，然后 trim
+      const productId = removeQuotes(values[productIdIndex] || '');
+
+      // 处理产品名称：去除两侧双引号，然后 trim
+      const productName = removeQuotes(values[productNameIndex] || '');
+
+      // 处理产品图片：先去除两侧双引号，然后按逗号分割取第一个
       let productImage: string | null = null;
       if (productImageIndex !== -1 && values[productImageIndex]) {
-        const imageValue = values[productImageIndex].trim();
+        const imageValue = removeQuotes(values[productImageIndex]);
         if (imageValue) {
-          // 如果包含逗号，取第一个链接
+          // 按逗号分割，取第一个链接
           const firstImage = imageValue.split(',')[0].trim();
-          productImage = firstImage || null;
+          // 再次清理双引号（防止分割后的值仍有引号）
+          productImage = removeQuotes(firstImage) || null;
+          // 因为实际中还是有引号，所以直接去除字符串中的第一位
+          // productImage = productImage?.slice(1) || null;
         }
       }
 
@@ -169,25 +200,27 @@ export class UploadService {
 
   /**
    * 更新或插入商品信息到 product_items 表
-   * 如果 shop_name 和 product_id 都匹配，则更新；否则插入
+   * 如果 shop_id 和 product_id 都匹配，则更新；否则插入
    */
   async upsertProductItem(
     shopName: string,
+    shopID: string,
     product: {
       product_id: string;
       product_name: string;
       product_image?: string | null;
     },
   ): Promise<UpsertProductResult> {
-    // 查找是否存在相同 shop_name 和 product_id 的记录
+    // 查找是否存在相同 shop_id 和 product_id 的记录
     const existing = await this.mysqlService.queryOne<{
       id: number;
       product_id: string;
       product_name: string;
       product_image: string | null;
       shop_name: string;
-    }>('SELECT * FROM product_items WHERE shop_name = ? AND product_id = ?', [
-      shopName,
+      shop_id: string;
+    }>('SELECT * FROM product_items WHERE shop_id = ? AND product_id = ?', [
+      shopID,
       product.product_id,
     ]);
     if (existing) {
@@ -197,9 +230,10 @@ export class UploadService {
         {
           product_name: product.product_name,
           product_image: product.product_image || null,
+          shop_name: shopName,
         },
         {
-          shop_name: shopName,
+          shop_id: shopID,
           product_id: product.product_id,
         },
       );
@@ -210,6 +244,7 @@ export class UploadService {
         product_id: product.product_id,
         product_name: product.product_name,
         shop_name: shopName,
+        shop_id: shopID,
         affectedRows,
       };
     } else {
@@ -219,6 +254,7 @@ export class UploadService {
         product_name: product.product_name,
         product_image: product.product_image || null,
         shop_name: shopName,
+        shop_id: shopID,
       });
 
       return {
@@ -227,6 +263,7 @@ export class UploadService {
         product_id: product.product_id,
         product_name: product.product_name,
         shop_name: shopName,
+        shop_id: shopID,
       };
     }
   }
@@ -293,11 +330,13 @@ export class UploadService {
    */
   async handleDailyStatsUpload(
     files: Express.Multer.File[],
-    shop: string,
+    shopName: string,
+    shopID: string,
   ): Promise<any[]> {
     console.log('=== handleDailyStatsUpload 函数开始执行 ===');
     console.log('接收到的文件数量:', files?.length || 0);
-    console.log('店铺名称:', shop);
+    console.log('店铺名称:', shopName);
+    console.log('店铺ID:', shopID);
     console.log('文件列表:', files?.map((f) => f.originalname) || []);
 
     // 第一步：验证所有文件名格式（在所有逻辑之前）
@@ -347,7 +386,8 @@ export class UploadService {
         // 解析 CSV 并上传数据
         const result = await this.uploadDailyStats(
           file,
-          shop,
+          shopName,
+          shopID,
           validation.date!,
         );
 
@@ -380,7 +420,8 @@ export class UploadService {
    */
   private parseDailyStatsExcel(
     file: Express.Multer.File,
-    shop: string,
+    shopName: string,
+    shopID: string,
     date: string,
   ): Array<Record<string, any>> {
     // 读取 Excel 文件
@@ -432,7 +473,8 @@ export class UploadService {
 
     dataRows.forEach((row, index) => {
       const rowData: Record<string, any> = {
-        shop,
+        shop_name: shopName,
+        shop_id: shopID,
         date,
       };
 
@@ -521,7 +563,7 @@ export class UploadService {
       confirmed_sales: ['销售额（已确定订单） (THB)'],
       confirmed_conversion: ['转化率（已确定订单）'],
       final_conversion: ['转化率 (将确定)'],
-      shop: ['shop', '店铺名称', '店铺'],
+      shop_name: ['shop', 'shop_name', '店铺名称', '店铺'],
       date: ['date', '数据日期', '日期'],
     };
 
@@ -613,7 +655,8 @@ export class UploadService {
    */
   private parseDailyStatsCSV(
     content: string,
-    shop: string,
+    shopName: string,
+    shopID: string,
     date: string,
   ): Array<Record<string, any>> {
     const lines = content.split('\n').filter((line) => line.trim());
@@ -850,7 +893,8 @@ export class UploadService {
           finalConversionIndex !== -1
             ? parseDecimal(values[finalConversionIndex])
             : null,
-        shop,
+        shop_name: shopName,
+        shop_id: shopID,
         date,
       };
     });
@@ -862,7 +906,8 @@ export class UploadService {
    */
   async uploadDailyStats(
     file: Express.Multer.File,
-    shop: string,
+    shopName: string,
+    shopID: string,
     date: string,
   ): Promise<{ insertedCount: number; message: string }> {
     console.log('已经进入 uploadDailyStats 函数');
@@ -875,11 +920,11 @@ export class UploadService {
 
     if (fileExtension === 'xlsx' || fileExtension === 'xls') {
       // 解析 Excel 文件
-      data = this.parseDailyStatsExcel(file, shop, date);
+      data = this.parseDailyStatsExcel(file, shopName, shopID, date);
     } else {
       // 解析 CSV 文件
       const fileContent = file.buffer.toString('utf-8');
-      data = this.parseDailyStatsCSV(fileContent, shop, date);
+      data = this.parseDailyStatsCSV(fileContent, shopName, shopID, date);
     }
 
     if (data.length === 0) {
@@ -888,10 +933,10 @@ export class UploadService {
 
     // 使用事务处理删除和插入
     const result = await this.mysqlService.transaction(async (connection) => {
-      // 1. 查询是否存在相同 shop 和 date 的数据
+      // 1. 查询是否存在相同 shop_id 和 date 的数据
       const [existingRows] = await connection.query(
-        'SELECT COUNT(*) as count FROM daily_product_stats WHERE shop = ? AND date = ?',
-        [shop, date],
+        'SELECT COUNT(*) as count FROM daily_product_stats WHERE shop_id = ? AND date = ?',
+        [shopID, date],
       );
 
       // 2. 如果存在，删除旧数据
@@ -900,8 +945,8 @@ export class UploadService {
         const count = existing[0]?.count || 0;
         if (count > 0) {
           await connection.execute(
-            'DELETE FROM daily_product_stats WHERE shop = ? AND date = ?',
-            [shop, date],
+            'DELETE FROM daily_product_stats WHERE shop_id = ? AND date = ?',
+            [shopID, date],
           );
         }
       }
@@ -934,7 +979,8 @@ export class UploadService {
         'confirmed_sales',
         'confirmed_conversion',
         'final_conversion',
-        'shop',
+        'shop_name',
+        'shop_id',
         'date',
       ];
 
@@ -1085,11 +1131,11 @@ export class UploadService {
    */
   async handleAdUpload(
     files: Express.Multer.File[],
-    shop: string,
+    shopName: string,
   ): Promise<any[]> {
     console.log('=== handleAdUpload 函数开始执行 ===');
     console.log('接收到的文件数量:', files?.length || 0);
-    console.log('店铺名称:', shop);
+    console.log('店铺名称:', shopName);
     console.log('文件列表:', files?.map((f) => f.originalname) || []);
 
     // 第一步：验证所有文件名格式（在所有逻辑之前）
@@ -1137,7 +1183,11 @@ export class UploadService {
       try {
         console.log(`开始调用 uploadAdStats 处理文件: ${file.originalname}`);
         // 解析 CSV 并上传数据
-        const result = await this.uploadAdStats(file, shop, validation.date!);
+        const result = await this.uploadAdStats(
+          file,
+          shopName,
+          validation.date!,
+        );
 
         console.log(`✅ 文件处理成功: ${file.originalname}`);
         console.log(`处理结果:`, result);
@@ -1170,7 +1220,7 @@ export class UploadService {
    */
   private parseAdStatsCSV(
     content: string,
-    shop: string,
+    shopName: string,
     date: string,
   ): Array<Record<string, any>> {
     // 不过滤空行，保持行号对应关系
@@ -1289,7 +1339,7 @@ export class UploadService {
         direct_roas: parseNumber(getValue(directRoasIndex)),
         ad_sales_cost: parseNumber(getValue(adSalesCostIndex)),
         direct_ad_sales_cost: parseNumber(getValue(directAdSalesCostIndex)),
-        shop,
+        shop: shopName,
         date,
       };
 
@@ -1310,7 +1360,7 @@ export class UploadService {
    */
   async uploadAdStats(
     file: Express.Multer.File,
-    shop: string,
+    shopName: string,
     date: string,
   ): Promise<{ insertedCount: number; message: string }> {
     console.log('已经进入 uploadAdStats 函数');
@@ -1319,7 +1369,7 @@ export class UploadService {
 
     // 解析 CSV 文件
     const fileContent = file.buffer.toString('utf-8');
-    const data = this.parseAdStatsCSV(fileContent, shop, date);
+    const data = this.parseAdStatsCSV(fileContent, shopName, date);
 
     if (data.length === 0) {
       throw new Error('文件中没有有效数据');
@@ -1332,7 +1382,7 @@ export class UploadService {
       // 1. 查询是否存在相同 shop 和 date 的数据
       const [existingRows] = await connection.query(
         'SELECT COUNT(*) as count FROM ad_stats WHERE shop = ? AND date = ?',
-        [shop, date],
+        [shopName, date],
       );
 
       // 2. 如果存在，删除旧数据
@@ -1340,10 +1390,12 @@ export class UploadService {
       if (existing && existing.length > 0) {
         const count = existing[0]?.count || 0;
         if (count > 0) {
-          console.log(`删除 ${count} 条旧数据 (shop: ${shop}, date: ${date})`);
+          console.log(
+            `删除 ${count} 条旧数据 (shop: ${shopName}, date: ${date})`,
+          );
           await connection.execute(
             'DELETE FROM ad_stats WHERE shop = ? AND date = ?',
-            [shop, date],
+            [shopName, date],
           );
         }
       }
@@ -1424,7 +1476,7 @@ export class UploadService {
   private handleDefaultUpload(
     files: Express.Multer.File[],
     type: string,
-    shop: string,
+    shopName: string,
   ): any[] {
     // TODO: 伪代码 - 多文件存储逻辑
     //
@@ -1466,11 +1518,11 @@ export class UploadService {
     return files.map((file, index) => ({
       id: Date.now() + index,
       originalName: file.originalname,
-      filePath: `uploads/${type}/${shop}/${file.originalname}`,
+      filePath: `uploads/${type}/${shopName}/${file.originalname}`,
       mimeType: file.mimetype,
       fileSize: file.size,
       type,
-      shop,
+      shop: shopName,
       createdAt: new Date(),
       updatedAt: new Date(),
     }));

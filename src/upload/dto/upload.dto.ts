@@ -3,5 +3,6 @@
 // 并在 main.ts 中添加: app.useGlobalPipes(new ValidationPipe());
 export class UploadDto {
   type: string;
-  shop: string;
+  shopName: string;
+  shopID: string;
 }

@@ -34,11 +34,11 @@ export class UploadController {
     }
 
     // 验证必需参数
-    const { type, shop } = body;
-    if (!type || !shop) {
+    const { type, shopName, shopID } = body;
+    if (!type || !shopName || !shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: 'type 和 shop 参数不能为空',
+        message: 'type、shopName 和 shopID 参数不能为空',
       });
     }
 
@@ -47,7 +47,8 @@ export class UploadController {
       const uploadEntities = await this.uploadService.saveMultipleUploads(
         files,
         type,
-        shop,
+        shopName,
+        shopID,
       );
 
       return res.status(HttpStatus.OK).json({
