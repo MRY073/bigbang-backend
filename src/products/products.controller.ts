@@ -11,6 +11,9 @@ import type { Response } from 'express';
 import { ProductsService } from './products.service';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { UpdateStageDto } from './dto/update-stage.dto';
+import { TestingMonitorDto } from './dto/testing-monitor.dto';
+import { AdTrendDto } from './dto/ad-trend.dto';
+import { AdRatioDto } from './dto/ad-ratio.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -39,7 +42,7 @@ export class ProductsController {
         message: '查询成功',
         data: products,
       });
-    } catch (error) {
+    } catch (error: unknown) {
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: '查询失败',
@@ -87,7 +90,7 @@ export class ProductsController {
         message: result.message,
         data: result,
       });
-    } catch (error) {
+    } catch (error: unknown) {
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: '更新失败',
@@ -95,5 +98,110 @@ export class ProductsController {
       });
     }
   }
-}
 
+  /**
+   * 测款链接监控
+   * GET /products/testing-monitor?shop=商店ID
+   */
+  @Get('testing-monitor')
+  async getTestingMonitor(
+    @Query() query: TestingMonitorDto,
+    @Res() res: Response,
+  ) {
+    const { shop } = query;
+
+    if (!shop) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'shop 参数不能为空',
+      });
+    }
+
+    try {
+      const data = await this.productsService.getTestingMonitorData(shop);
+
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: '查询成功',
+        data,
+      });
+    } catch (error: unknown) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: '查询失败',
+        error: error instanceof Error ? error.message : '未知错误',
+      });
+    }
+  }
+
+  /**
+   * 30天广告占比趋势
+   * GET /products/ad-trend?shop=商店ID
+   */
+  @Get('ad-trend')
+  async getAdTrend(@Query() query: AdTrendDto, @Res() res: Response) {
+    const { shop } = query;
+
+    if (!shop) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'shop 参数不能为空',
+      });
+    }
+
+    try {
+      const data = await this.productsService.getAdTrend30Days(shop);
+
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: '查询成功',
+        data,
+      });
+    } catch (error: unknown) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: '查询失败',
+        error: error instanceof Error ? error.message : '未知错误',
+      });
+    }
+  }
+
+  /**
+   * 指定日期广告占比
+   * GET /products/ad-ratio?shop=商店ID&date=日期
+   */
+  @Get('ad-ratio')
+  async getAdRatio(@Query() query: AdRatioDto, @Res() res: Response) {
+    const { shop, date } = query;
+
+    if (!shop) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'shop 参数不能为空',
+      });
+    }
+
+    if (!date) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'date 参数不能为空',
+      });
+    }
+
+    try {
+      const data = await this.productsService.getAdRatioByDate(shop, date);
+
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: '查询成功',
+        data,
+      });
+    } catch (error: unknown) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: '查询失败',
+        error: error instanceof Error ? error.message : '未知错误',
+      });
+    }
+  }
+}

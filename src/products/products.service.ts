@@ -185,5 +185,667 @@ export class ProductsService {
       message: `成功更新商品阶段时间段：${stageType}`,
     };
   }
+
+  /**
+   * 测款链接监控
+   * 根据商店信息筛选出当前商品阶段为测款阶段的商品，并统计相关数据
+   * @param shop 商店ID（店铺名称）
+   * @returns 测款商品监控数据列表
+   */
+  async getTestingMonitorData(shop: string): Promise<
+    Array<{
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      total_clicks: number; // 测款开始以来的点击数合计
+      total_visitors: number; // 测款开始以来的访客数合计
+      total_orders: number; // 测款开始以来的出单数合计
+    }>
+  > {
+    console.log('=== getTestingMonitorData 函数开始执行 ===');
+    console.log('接收到的店铺名称:', shop);
+
+    const currentDate = new Date();
+    console.log('当前时间:', currentDate.toISOString());
+
+    // 1. 查询当前处于测款阶段的商品
+    console.log('\n--- 第一步：查询当前处于测款阶段的商品 ---');
+    console.log('查询条件:');
+    console.log('  - shop_name =', shop);
+    console.log('  - testing_stage_start IS NOT NULL');
+    console.log('  - testing_stage_start <=', currentDate.toISOString());
+    console.log('  - (testing_stage_end IS NULL OR testing_stage_end >=', currentDate.toISOString(), ')');
+
+    // 条件：shop_name = shop 且 testing_stage_start 不为 null
+    // 且当前时间在测款阶段时间范围内（如果 end 为 null，则只判断 start）
+    const testingProducts = await this.mysqlService.query<{
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      testing_stage_start: Date;
+      testing_stage_end: Date | null;
+    }>(
+      `SELECT 
+        product_id,
+        product_name,
+        product_image,
+        testing_stage_start,
+        testing_stage_end
+      FROM product_items 
+      WHERE shop_name = ? 
+        AND testing_stage_start IS NOT NULL
+        AND testing_stage_start <= ?
+        AND (testing_stage_end IS NULL OR testing_stage_end >= ?)
+      ORDER BY id ASC`,
+      [shop, currentDate, currentDate],
+    );
+
+    console.log('查询到的测款商品数量:', testingProducts?.length || 0);
+    if (testingProducts && testingProducts.length > 0) {
+      console.log('测款商品列表:');
+      testingProducts.forEach((p, index) => {
+        console.log(
+          `  ${index + 1}. product_id: ${p.product_id}, product_name: ${p.product_name}`,
+        );
+        console.log(
+          `     测款开始时间: ${p.testing_stage_start}, 测款结束时间: ${p.testing_stage_end || '未设置'}`,
+        );
+      });
+    }
+
+    if (!testingProducts || testingProducts.length === 0) {
+      console.log('⚠️ 未找到测款阶段的商品，返回空数组');
+      console.log('=== getTestingMonitorData 函数执行完成（无数据）===\n');
+      return [];
+    }
+
+    // 2. 对每个商品统计数据
+    console.log('\n--- 第二步：对每个商品统计数据 ---');
+    console.log(`开始处理 ${testingProducts.length} 个商品的统计数据`);
+
+    const result = await Promise.all(
+      testingProducts.map(async (product, index) => {
+        console.log(
+          `\n处理第 ${index + 1}/${testingProducts.length} 个商品: ${product.product_id}`,
+        );
+        const {
+          product_id,
+          product_name,
+          product_image,
+          testing_stage_start,
+          testing_stage_end,
+        } = product;
+
+        console.log(`商品信息: ${product_name} (${product_id})`);
+
+        // 转换开始时间为 Date 对象
+        const startDate = new Date(testing_stage_start);
+        const endDate = testing_stage_end ? new Date(testing_stage_end) : null;
+
+        console.log(`测款开始时间: ${startDate.toISOString()}`);
+        console.log(
+          `测款结束时间: ${endDate ? endDate.toISOString() : '未设置（无结束时间）'}`,
+        );
+
+        // 格式化日期为 YYYY-MM-DD 格式（用于 SQL 查询）
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate ? endDate.toISOString().split('T')[0] : null;
+
+        console.log(`用于查询的开始日期: ${startDateStr}`);
+        console.log(`用于查询的结束日期: ${endDateStr || '无（查询到当前）'}`);
+
+        // 初始化统计数据
+        let totalClicks = 0;
+        let totalVisitors = 0;
+        let totalOrders = 0;
+
+        try {
+          // 3. 查询 ad_stats 表的点击数合计
+          console.log(`\n  [${product_id}] 开始查询广告数据（点击数）...`);
+          try {
+            let adStatsQuery = `
+              SELECT COALESCE(SUM(clicks), 0) as total_clicks
+              FROM ad_stats
+              WHERE shop = ? AND product_id = ? AND date >= ?
+            `;
+            const adStatsParams: any[] = [shop, product_id, startDateStr];
+
+            if (endDateStr) {
+              adStatsQuery += ' AND date <= ?';
+              adStatsParams.push(endDateStr);
+            }
+
+            console.log(`  [${product_id}] 广告数据查询 SQL:`, adStatsQuery);
+            console.log(`  [${product_id}] 查询参数:`, adStatsParams);
+
+            const adStatsResult = await this.mysqlService.queryOne<{
+              total_clicks: number | null;
+            }>(adStatsQuery, adStatsParams);
+
+            console.log(`  [${product_id}] 广告数据查询结果:`, adStatsResult);
+
+            if (adStatsResult && adStatsResult.total_clicks !== null) {
+              totalClicks = Number(adStatsResult.total_clicks) || 0;
+              console.log(`  [${product_id}] ✅ 点击数统计成功: ${totalClicks}`);
+            } else {
+              console.log(`  [${product_id}] ⚠️ 广告数据查询结果为空，点击数设为 0`);
+            }
+          } catch (error) {
+            // 查询广告数据失败，设置为 0
+            console.warn(
+              `  [${product_id}] ❌ 查询广告数据失败:`,
+              error,
+            );
+            totalClicks = 0;
+          }
+
+          // 4. 查询 daily_product_stats 表的访客数和出单数合计
+          console.log(`\n  [${product_id}] 开始查询每日数据（访客数和出单数）...`);
+          try {
+            let dailyStatsQuery = `
+              SELECT 
+                COALESCE(SUM(visitors), 0) as total_visitors,
+                COALESCE(SUM(ordered_items), 0) as total_orders
+              FROM daily_product_stats
+              WHERE shop = ? AND product_id = ? AND date >= ?
+            `;
+            const dailyStatsParams: any[] = [shop, product_id, startDateStr];
+
+            if (endDateStr) {
+              dailyStatsQuery += ' AND date <= ?';
+              dailyStatsParams.push(endDateStr);
+            }
+
+            console.log(`  [${product_id}] 每日数据查询 SQL:`, dailyStatsQuery);
+            console.log(`  [${product_id}] 查询参数:`, dailyStatsParams);
+
+            const dailyStatsResult = await this.mysqlService.queryOne<{
+              total_visitors: number | null;
+              total_orders: number | null;
+            }>(dailyStatsQuery, dailyStatsParams);
+
+            console.log(`  [${product_id}] 每日数据查询结果:`, dailyStatsResult);
+
+            if (dailyStatsResult) {
+              totalVisitors = Number(dailyStatsResult.total_visitors) || 0;
+              totalOrders = Number(dailyStatsResult.total_orders) || 0;
+              console.log(
+                `  [${product_id}] ✅ 访客数统计成功: ${totalVisitors}`,
+              );
+              console.log(
+                `  [${product_id}] ✅ 出单数统计成功: ${totalOrders}`,
+              );
+            } else {
+              console.log(
+                `  [${product_id}] ⚠️ 每日数据查询结果为空，访客数和出单数设为 0`,
+              );
+            }
+          } catch (error) {
+            // 查询每日数据失败，设置为 0
+            console.warn(
+              `  [${product_id}] ❌ 查询每日数据失败:`,
+              error,
+            );
+            totalVisitors = 0;
+            totalOrders = 0;
+          }
+
+          console.log(`\n  [${product_id}] 📊 统计数据汇总:`);
+          console.log(`     - 点击数: ${totalClicks}`);
+          console.log(`     - 访客数: ${totalVisitors}`);
+          console.log(`     - 出单数: ${totalOrders}`);
+        } catch (error) {
+          // 整体查询失败，使用默认值 0
+          console.error(
+            `  [${product_id}] ❌ 统计商品数据失败:`,
+            error,
+          );
+        }
+
+        const productResult = {
+          product_id,
+          product_name,
+          product_image,
+          total_clicks: totalClicks,
+          total_visitors: totalVisitors,
+          total_orders: totalOrders,
+        };
+
+        console.log(`  [${product_id}] ✅ 商品数据处理完成`);
+
+        return productResult;
+      }),
+    );
+
+    console.log('\n=== getTestingMonitorData 函数执行完成 ===');
+    console.log(`总共处理了 ${result.length} 个商品`);
+    console.log('最终返回结果:');
+    result.forEach((item, index) => {
+      console.log(
+        `  ${index + 1}. ${item.product_name} (${item.product_id}): 点击数=${item.total_clicks}, 访客数=${item.total_visitors}, 出单数=${item.total_orders}`,
+      );
+    });
+    console.log('==========================================\n');
+
+    return result;
+  }
+
+  /**
+   * 判断商品在指定日期属于哪个阶段
+   * @param productId 商品ID
+   * @param shop 商店名称
+   * @param targetDate 目标日期
+   * @returns 阶段类型：'testing' | 'potential' | 'product' | 'abandoned' | null
+   */
+  private async getProductStageByDate(
+    productId: string,
+    shop: string,
+    targetDate: Date,
+  ): Promise<'testing' | 'potential' | 'product' | 'abandoned' | null> {
+    try {
+      const product = await this.mysqlService.queryOne<{
+        testing_stage_start: Date | null;
+        testing_stage_end: Date | null;
+        potential_stage_start: Date | null;
+        potential_stage_end: Date | null;
+        product_stage_start: Date | null;
+        product_stage_end: Date | null;
+        abandoned_stage_start: Date | null;
+        abandoned_stage_end: Date | null;
+      }>(
+        `SELECT 
+          testing_stage_start,
+          testing_stage_end,
+          potential_stage_start,
+          potential_stage_end,
+          product_stage_start,
+          product_stage_end,
+          abandoned_stage_start,
+          abandoned_stage_end
+        FROM product_items
+        WHERE shop_name = ? AND product_id = ?`,
+        [shop, productId],
+      );
+
+      if (!product) {
+        return null;
+      }
+
+      const dateStr = targetDate.toISOString().split('T')[0];
+
+      // 判断是否在测款阶段
+      if (product.testing_stage_start) {
+        const start = new Date(product.testing_stage_start)
+          .toISOString()
+          .split('T')[0];
+        const end = product.testing_stage_end
+          ? new Date(product.testing_stage_end).toISOString().split('T')[0]
+          : null;
+        if (dateStr >= start && (!end || dateStr <= end)) {
+          return 'testing';
+        }
+      }
+
+      // 判断是否在潜力阶段
+      if (product.potential_stage_start) {
+        const start = new Date(product.potential_stage_start)
+          .toISOString()
+          .split('T')[0];
+        const end = product.potential_stage_end
+          ? new Date(product.potential_stage_end).toISOString().split('T')[0]
+          : null;
+        if (dateStr >= start && (!end || dateStr <= end)) {
+          return 'potential';
+        }
+      }
+
+      // 判断是否在成品阶段
+      if (product.product_stage_start) {
+        const start = new Date(product.product_stage_start)
+          .toISOString()
+          .split('T')[0];
+        const end = product.product_stage_end
+          ? new Date(product.product_stage_end).toISOString().split('T')[0]
+          : null;
+        if (dateStr >= start && (!end || dateStr <= end)) {
+          return 'product';
+        }
+      }
+
+      // 判断是否在放弃阶段
+      if (product.abandoned_stage_start) {
+        const start = new Date(product.abandoned_stage_start)
+          .toISOString()
+          .split('T')[0];
+        const end = product.abandoned_stage_end
+          ? new Date(product.abandoned_stage_end).toISOString().split('T')[0]
+          : null;
+        if (dateStr >= start && (!end || dateStr <= end)) {
+          return 'abandoned';
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.warn(
+        `判断商品阶段失败 (shop: ${shop}, product_id: ${productId}, date: ${targetDate.toISOString()}):`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * 30天广告占比趋势
+   * 计算近30天，每天的不同类型广告商品所属阶段的花费对比
+   * @param shop 商店ID（店铺名称）
+   * @returns 30天的趋势数据
+   */
+  async getAdTrend30Days(shop: string): Promise<
+    Array<{
+      date: string; // 日期 YYYY-MM-DD
+      testing_stage_spend: number; // 测款阶段花费
+      potential_stage_spend: number; // 潜力阶段花费
+      product_stage_spend: number; // 成品阶段花费
+      abandoned_stage_spend: number; // 放弃阶段花费
+      no_stage_spend: number; // 无阶段花费
+    }>
+  > {
+    console.log('=== getAdTrend30Days 函数开始执行 ===');
+    console.log('接收到的店铺名称:', shop);
+
+    // 计算近30天的日期范围
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - 29); // 近30天（包含今天）
+
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    console.log('查询日期范围:', startDateStr, '到', endDateStr);
+
+    // 1. 查询近30天的广告数据
+    console.log('\n--- 第一步：查询近30天的广告数据 ---');
+    const adStats = await this.mysqlService.query<{
+      product_id: string;
+      date: Date;
+      spend: number | null;
+    }>(
+      `SELECT 
+        product_id,
+        date,
+        COALESCE(spend, 0) as spend
+      FROM ad_stats
+      WHERE shop = ? AND date >= ? AND date <= ?
+      ORDER BY date ASC, product_id ASC`,
+      [shop, startDateStr, endDateStr],
+    );
+
+    console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
+
+    if (!adStats || adStats.length === 0) {
+      console.log('⚠️ 未找到广告数据，返回空数组');
+      // 返回30天的空数据
+      const emptyData: Array<{
+        date: string;
+        testing_stage_spend: number;
+        potential_stage_spend: number;
+        product_stage_spend: number;
+        abandoned_stage_spend: number;
+        no_stage_spend: number;
+      }> = [];
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + i);
+        emptyData.push({
+          date: date.toISOString().split('T')[0],
+          testing_stage_spend: 0,
+          potential_stage_spend: 0,
+          product_stage_spend: 0,
+          abandoned_stage_spend: 0,
+          no_stage_spend: 0,
+        });
+      }
+      return emptyData;
+    }
+
+    // 2. 生成30天的日期列表
+    const dateMap = new Map<
+      string,
+      {
+        testing_stage_spend: number;
+        potential_stage_spend: number;
+        product_stage_spend: number;
+        abandoned_stage_spend: number;
+        no_stage_spend: number;
+      }
+    >();
+
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+      dateMap.set(dateStr, {
+        testing_stage_spend: 0,
+        potential_stage_spend: 0,
+        product_stage_spend: 0,
+        abandoned_stage_spend: 0,
+        no_stage_spend: 0,
+      });
+    }
+
+    // 3. 对每条广告数据，判断商品阶段并累加花费
+    console.log('\n--- 第二步：判断商品阶段并统计花费 ---');
+    console.log(`开始处理 ${adStats.length} 条广告数据`);
+
+    for (const ad of adStats) {
+      const dateStr = ad.date instanceof Date
+        ? ad.date.toISOString().split('T')[0]
+        : new Date(ad.date).toISOString().split('T')[0];
+      const spend = Number(ad.spend) || 0;
+
+      if (spend <= 0) continue; // 跳过花费为0或null的数据
+
+      const stage = await this.getProductStageByDate(
+        ad.product_id,
+        shop,
+        new Date(dateStr),
+      );
+
+      const dayData = dateMap.get(dateStr);
+      if (dayData) {
+        if (stage === 'testing') {
+          dayData.testing_stage_spend += spend;
+        } else if (stage === 'potential') {
+          dayData.potential_stage_spend += spend;
+        } else if (stage === 'product') {
+          dayData.product_stage_spend += spend;
+        } else if (stage === 'abandoned') {
+          dayData.abandoned_stage_spend += spend;
+        } else {
+          dayData.no_stage_spend += spend;
+        }
+      }
+    }
+
+    // 4. 转换为数组格式
+    const result = Array.from(dateMap.entries())
+      .map(([date, data]) => ({
+        date,
+        ...data,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    console.log('\n=== getAdTrend30Days 函数执行完成 ===');
+    console.log(`总共处理了 ${result.length} 天的数据`);
+    console.log('最终返回结果（前5天示例）:');
+    result.slice(0, 5).forEach((item) => {
+      console.log(
+        `  ${item.date}: 测款=${item.testing_stage_spend}, 潜力=${item.potential_stage_spend}, 成品=${item.product_stage_spend}, 放弃=${item.abandoned_stage_spend}, 无阶段=${item.no_stage_spend}`,
+      );
+    });
+    console.log('==========================================\n');
+
+    return result;
+  }
+
+  /**
+   * 指定日期广告占比
+   * 获取当天的不同阶段商品的广告花费
+   * 只计算成品阶段商品的广告花费和产出，以及成品阶段合计的ROI
+   * @param shop 商店ID（店铺名称）
+   * @param date 日期（YYYY-MM-DD 格式）
+   * @returns 指定日期的广告占比数据
+   */
+  async getAdRatioByDate(
+    shop: string,
+    date: string,
+  ): Promise<{
+    date: string;
+    stages: {
+      testing_stage: { spend: number };
+      potential_stage: { spend: number };
+      product_stage: {
+        spend: number;
+        sales_amount: number; // 产出（销售额）
+        roi: number; // ROI（广告支出回报率）
+      };
+      abandoned_stage: { spend: number };
+      no_stage: { spend: number };
+    };
+  }> {
+    console.log('=== getAdRatioByDate 函数开始执行 ===');
+    console.log('接收到的店铺名称:', shop);
+    console.log('接收到的日期:', date);
+
+    // 验证日期格式
+    const targetDate = new Date(date);
+    if (isNaN(targetDate.getTime())) {
+      throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
+    }
+
+    const dateStr = targetDate.toISOString().split('T')[0];
+    console.log('解析后的日期:', dateStr);
+
+    // 1. 查询指定日期的广告数据
+    console.log('\n--- 第一步：查询指定日期的广告数据 ---');
+    const adStats = await this.mysqlService.query<{
+      product_id: string;
+      spend: number | null;
+      sales_amount: number | null;
+      roas: number | null;
+    }>(
+      `SELECT 
+        product_id,
+        COALESCE(spend, 0) as spend,
+        COALESCE(sales_amount, 0) as sales_amount,
+        COALESCE(roas, 0) as roas
+      FROM ad_stats
+      WHERE shop = ? AND date = ?
+      ORDER BY product_id ASC`,
+      [shop, dateStr],
+    );
+
+    console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
+
+    // 初始化各阶段数据
+    const stageData = {
+      testing_stage: { spend: 0 },
+      potential_stage: { spend: 0 },
+      product_stage: {
+        spend: 0,
+        sales_amount: 0,
+        roi: 0,
+      },
+      abandoned_stage: { spend: 0 },
+      no_stage: { spend: 0 },
+    };
+
+    if (!adStats || adStats.length === 0) {
+      console.log('⚠️ 未找到广告数据，返回空数据');
+      console.log('=== getAdRatioByDate 函数执行完成（无数据）===\n');
+      return {
+        date: dateStr,
+        stages: stageData,
+      };
+    }
+
+    // 2. 对每条广告数据，判断商品阶段并累加花费
+    console.log('\n--- 第二步：判断商品阶段并统计花费 ---');
+    console.log(`开始处理 ${adStats.length} 条广告数据`);
+
+    let productStageSpend = 0;
+    let productStageSales = 0;
+    let productStageWeightedRoi = 0; // 用于计算加权平均ROI
+
+    for (const ad of adStats) {
+      const spend = Number(ad.spend) || 0;
+      if (spend <= 0) continue; // 跳过花费为0的数据
+
+      const stage = await this.getProductStageByDate(
+        ad.product_id,
+        shop,
+        targetDate,
+      );
+
+      console.log(
+        `商品 ${ad.product_id}: 阶段=${stage || '无'}, 花费=${spend}`,
+      );
+
+      if (stage === 'testing') {
+        stageData.testing_stage.spend += spend;
+      } else if (stage === 'potential') {
+        stageData.potential_stage.spend += spend;
+      } else if (stage === 'product') {
+        stageData.product_stage.spend += spend;
+        const sales = Number(ad.sales_amount) || 0;
+        const roas = Number(ad.roas) || 0;
+        stageData.product_stage.sales_amount += sales;
+        // 累加花费用于计算加权平均ROI
+        productStageSpend += spend;
+        productStageSales += sales;
+        // 如果ROI存在，累加（按花费加权）
+        if (roas > 0 && spend > 0) {
+          productStageWeightedRoi += roas * spend;
+        }
+      } else if (stage === 'abandoned') {
+        stageData.abandoned_stage.spend += spend;
+      } else {
+        stageData.no_stage.spend += spend;
+      }
+    }
+
+    // 3. 计算成品阶段的合计ROI
+    console.log('\n--- 第三步：计算成品阶段的合计ROI ---');
+    if (productStageSpend > 0) {
+      // 方法1：使用加权平均ROI
+      if (productStageWeightedRoi > 0) {
+        stageData.product_stage.roi = productStageWeightedRoi / productStageSpend;
+      } else {
+        // 方法2：如果没有ROI数据，使用销售额/花费计算
+        stageData.product_stage.roi =
+          productStageSales > 0 ? productStageSales / productStageSpend : 0;
+      }
+    } else {
+      stageData.product_stage.roi = 0;
+    }
+
+    console.log('成品阶段统计:');
+    console.log(`  花费: ${stageData.product_stage.spend}`);
+    console.log(`  产出（销售额）: ${stageData.product_stage.sales_amount}`);
+    console.log(`  ROI: ${stageData.product_stage.roi}`);
+
+    console.log('\n=== getAdRatioByDate 函数执行完成 ===');
+    console.log('最终返回结果:', {
+      date: dateStr,
+      stages: stageData,
+    });
+    console.log('==========================================\n');
+
+    return {
+      date: dateStr,
+      stages: stageData,
+    };
+  }
 }
 

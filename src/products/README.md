@@ -170,12 +170,76 @@ fetch('/products/stage', {
 
 详细表结构请参考 `src/upload/README.md` 中的 `product_items` 表说明。
 
+### 测款链接监控接口
+
+**接口地址**: `GET /products/testing-monitor`
+
+**请求参数**:
+- `shop` (query, 必需): 商店ID（店铺名称）
+
+**请求示例**:
+```
+GET /products/testing-monitor?shop=店铺名称
+```
+
+**响应格式**:
+```json
+{
+  "success": true,
+  "message": "查询成功",
+  "data": [
+    {
+      "product_id": "12345",
+      "product_name": "商品名称1",
+      "product_image": "https://example.com/image1.jpg",
+      "total_clicks": 1500,
+      "total_visitors": 800,
+      "total_orders": 50
+    }
+  ]
+}
+```
+
+**字段说明**:
+- `product_id`: 产品ID
+- `product_name`: 产品名称
+- `product_image`: 产品主图（可为 null）
+- `total_clicks`: 测款开始以来的点击数合计（从 `ad_stats` 表统计）
+- `total_visitors`: 测款开始以来的访客数合计（从 `daily_product_stats` 表统计）
+- `total_orders`: 测款开始以来的出单数合计（从 `daily_product_stats` 表的 `ordered_items` 字段统计）
+
+**功能说明**:
+1. 根据商店信息筛选出当前商品阶段为测款阶段的商品集合
+   - 筛选条件：`testing_stage_start` 不为 null，且当前时间在测款阶段时间范围内
+   - 如果 `testing_stage_end` 为 null，则只要 `testing_stage_start <= 当前时间` 即可
+2. 对每个测款商品统计以下数据：
+   - **点击数合计**：从 `ad_stats` 表查询，统计测款开始时间到结束时间（或当前时间）的所有 `clicks` 字段合计
+   - **访客数合计**：从 `daily_product_stats` 表查询，统计测款开始时间到结束时间（或当前时间）的所有 `visitors` 字段合计
+   - **出单数合计**：从 `daily_product_stats` 表查询，统计测款开始时间到结束时间（或当前时间）的所有 `ordered_items` 字段合计
+
+**容错处理**:
+- 如果某个商品在 `ad_stats` 表中没有数据，`total_clicks` 返回 0
+- 如果某个商品在 `daily_product_stats` 表中没有数据，`total_visitors` 和 `total_orders` 返回 0
+- 如果某个时间段的数据不存在，该时间段不计入统计（视为 0）
+- 所有查询都有 try-catch 容错处理，查询失败时返回 0 而不是抛出错误
+
+**使用示例**:
+```javascript
+// 查询测款链接监控数据
+fetch('/products/testing-monitor?shop=店铺名称')
+  .then(response => response.json())
+  .then(data => {
+    console.log('测款商品监控数据:', data);
+  });
+```
+
 ## 注意事项
 
 1. **时间格式**：所有时间字段使用 ISO 8601 格式（如 `"2025-01-01T00:00:00.000Z"`）
 2. **空值处理**：`start_time` 和 `end_time` 可以为 `null`，表示该时间段未设置
 3. **商品验证**：修改阶段时间段时，系统会验证商品是否存在（根据 `shop` 和 `product_id`）
 4. **阶段类型**：`stage_type` 必须是指定的四个值之一，否则会返回错误
+5. **测款监控**：测款链接监控接口会自动筛选当前处于测款阶段的商品，如果商品没有设置测款阶段或已过期，不会出现在结果中
 
 ## 错误处理
 
@@ -183,4 +247,5 @@ fetch('/products/stage', {
 - **商品不存在**：如果指定的商品不存在，返回错误信息
 - **时间格式错误**：如果时间格式不正确，返回错误信息
 - **网络错误**：如果数据库操作失败，返回 500 错误
+- **数据缺失**：测款监控接口中，如果某个商品的数据不存在，会返回 0 而不是错误
 
