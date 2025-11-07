@@ -21,21 +21,24 @@ export class ProductsController {
 
   /**
    * 查询店铺商品列表
-   * GET /products?shop=商店ID
+   * GET /products?shopID=店铺ID&shopName=店铺名称
    */
   @Get()
   async getProducts(@Query() query: QueryProductsDto, @Res() res: Response) {
-    const { shop } = query;
+    const { shopID, shopName } = query;
 
-    if (!shop) {
+    if (!shopID || !shopName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: 'shop 参数不能为空',
+        message: 'shopID 和 shopName 参数不能为空',
       });
     }
 
     try {
-      const products = await this.productsService.getProductsByShop(shop);
+      const products = await this.productsService.getProductsByShop(
+        shopID,
+        shopName,
+      );
 
       return res.status(HttpStatus.OK).json({
         success: true,
@@ -57,13 +60,14 @@ export class ProductsController {
    */
   @Put('stage')
   async updateStage(@Body() body: UpdateStageDto, @Res() res: Response) {
-    const { product_id, shop, stage_type, start_time, end_time } = body;
+    const { product_id, shopID, shopName, stage_type, start_time, end_time } =
+      body;
 
     // 验证必需参数
-    if (!product_id || !shop || !stage_type) {
+    if (!product_id || !shopID || !shopName || !stage_type) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: 'product_id、shop 和 stage_type 参数不能为空',
+        message: 'product_id、shopID、shopName 和 stage_type 参数不能为空',
       });
     }
 
@@ -79,7 +83,8 @@ export class ProductsController {
     try {
       const result = await this.productsService.updateProductStage(
         product_id,
-        shop,
+        shopID,
+        shopName,
         stage_type,
         start_time,
         end_time,
@@ -101,24 +106,27 @@ export class ProductsController {
 
   /**
    * 测款链接监控
-   * GET /products/testing-monitor?shop=商店ID
+   * GET /products/testing-monitor?shopID=店铺ID&shopName=店铺名称
    */
   @Get('testing-monitor')
   async getTestingMonitor(
     @Query() query: TestingMonitorDto,
     @Res() res: Response,
   ) {
-    const { shop } = query;
+    const { shopID, shopName } = query;
 
-    if (!shop) {
+    if (!shopID || !shopName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: 'shop 参数不能为空',
+        message: 'shopID 和 shopName 参数不能为空',
       });
     }
 
     try {
-      const data = await this.productsService.getTestingMonitorData(shop);
+      const data = await this.productsService.getTestingMonitorData(
+        shopID,
+        shopName,
+      );
 
       return res.status(HttpStatus.OK).json({
         success: true,

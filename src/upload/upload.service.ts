@@ -177,8 +177,6 @@ export class UploadService {
           const firstImage = imageValue.split(',')[0].trim();
           // 再次清理双引号（防止分割后的值仍有引号）
           productImage = removeQuotes(firstImage) || null;
-          // 因为实际中还是有引号，所以直接去除字符串中的第一位
-          // productImage = productImage?.slice(1) || null;
         }
       }
 

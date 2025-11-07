@@ -7,10 +7,14 @@ export class ProductsService {
 
   /**
    * 查询店铺商品列表
-   * @param shop 商店ID（店铺名称）
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
    * @returns 商品列表，包含产品ID、产品名称、产品主图、四个阶段的时间段
    */
-  async getProductsByShop(shop: string): Promise<
+  async getProductsByShop(
+    shopID: string,
+    shopName: string,
+  ): Promise<
     Array<{
       product_id: string;
       product_name: string;
@@ -59,9 +63,9 @@ export class ProductsService {
         abandoned_stage_start,
         abandoned_stage_end
       FROM product_items 
-      WHERE shop_name = ? 
+      WHERE shop_id = ? 
       ORDER BY id ASC`,
-      [shop],
+      [shopID],
     );
 
     // 转换日期格式为 ISO 8601 字符串
@@ -107,26 +111,30 @@ export class ProductsService {
   /**
    * 修改商品阶段时间段
    * @param productId 产品ID
-   * @param shop 商店ID（店铺名称）
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
    * @param stageType 阶段类型
    * @param startTime 开始时间（可选）
    * @param endTime 结束时间（可选）
    */
   async updateProductStage(
     productId: string,
-    shop: string,
+    shopID: string,
+    shopName: string,
     stageType: 'testing' | 'potential' | 'product' | 'abandoned',
     startTime?: string | null,
     endTime?: string | null,
   ): Promise<{ success: boolean; message: string }> {
     // 验证商品是否存在
     const existing = await this.mysqlService.queryOne<{ id: number }>(
-      'SELECT id FROM product_items WHERE shop_name = ? AND product_id = ?',
-      [shop, productId],
+      'SELECT id FROM product_items WHERE shop_id = ? AND product_id = ?',
+      [shopID, productId],
     );
 
     if (!existing) {
-      throw new Error(`商品不存在：shop=${shop}, product_id=${productId}`);
+      throw new Error(
+        `商品不存在：shop_id=${shopID}, product_id=${productId}`,
+      );
     }
 
     // 根据阶段类型构建更新字段
@@ -176,7 +184,7 @@ export class ProductsService {
 
     // 更新数据库
     await this.mysqlService.update('product_items', updateData, {
-      shop_name: shop,
+      shop_id: shopID,
       product_id: productId,
     });
 
@@ -189,10 +197,14 @@ export class ProductsService {
   /**
    * 测款链接监控
    * 根据商店信息筛选出当前商品阶段为测款阶段的商品，并统计相关数据
-   * @param shop 商店ID（店铺名称）
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
    * @returns 测款商品监控数据列表
    */
-  async getTestingMonitorData(shop: string): Promise<
+  async getTestingMonitorData(
+    shopID: string,
+    shopName: string,
+  ): Promise<
     Array<{
       product_id: string;
       product_name: string;
@@ -203,7 +215,8 @@ export class ProductsService {
     }>
   > {
     console.log('=== getTestingMonitorData 函数开始执行 ===');
-    console.log('接收到的店铺名称:', shop);
+    console.log('接收到的店铺ID:', shopID);
+    console.log('接收到的店铺名称:', shopName);
 
     const currentDate = new Date();
     console.log('当前时间:', currentDate.toISOString());
@@ -211,12 +224,12 @@ export class ProductsService {
     // 1. 查询当前处于测款阶段的商品
     console.log('\n--- 第一步：查询当前处于测款阶段的商品 ---');
     console.log('查询条件:');
-    console.log('  - shop_name =', shop);
+    console.log('  - shop_id =', shopID);
     console.log('  - testing_stage_start IS NOT NULL');
     console.log('  - testing_stage_start <=', currentDate.toISOString());
     console.log('  - (testing_stage_end IS NULL OR testing_stage_end >=', currentDate.toISOString(), ')');
 
-    // 条件：shop_name = shop 且 testing_stage_start 不为 null
+    // 条件：shop_id = shopID 且 testing_stage_start 不为 null
     // 且当前时间在测款阶段时间范围内（如果 end 为 null，则只判断 start）
     const testingProducts = await this.mysqlService.query<{
       product_id: string;
@@ -232,12 +245,12 @@ export class ProductsService {
         testing_stage_start,
         testing_stage_end
       FROM product_items 
-      WHERE shop_name = ? 
+      WHERE shop_id = ? 
         AND testing_stage_start IS NOT NULL
         AND testing_stage_start <= ?
         AND (testing_stage_end IS NULL OR testing_stage_end >= ?)
       ORDER BY id ASC`,
-      [shop, currentDate, currentDate],
+      [shopID, currentDate, currentDate],
     );
 
     console.log('查询到的测款商品数量:', testingProducts?.length || 0);
@@ -308,7 +321,7 @@ export class ProductsService {
               FROM ad_stats
               WHERE shop = ? AND product_id = ? AND date >= ?
             `;
-            const adStatsParams: any[] = [shop, product_id, startDateStr];
+            const adStatsParams: any[] = [shopName, product_id, startDateStr];
 
             if (endDateStr) {
               adStatsQuery += ' AND date <= ?';
@@ -347,9 +360,9 @@ export class ProductsService {
                 COALESCE(SUM(visitors), 0) as total_visitors,
                 COALESCE(SUM(ordered_items), 0) as total_orders
               FROM daily_product_stats
-              WHERE shop = ? AND product_id = ? AND date >= ?
+              WHERE shop_id = ? AND product_id = ? AND date >= ?
             `;
-            const dailyStatsParams: any[] = [shop, product_id, startDateStr];
+            const dailyStatsParams: any[] = [shopID, product_id, startDateStr];
 
             if (endDateStr) {
               dailyStatsQuery += ' AND date <= ?';
