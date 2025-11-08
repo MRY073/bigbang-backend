@@ -592,6 +592,22 @@ export class UploadService {
   }
 
   /**
+   * 清理数字字符串，移除千位分隔符、空格、货币符号等
+   * @param value 原始值
+   * @returns 清理后的数字字符串
+   */
+  private cleanNumberString(value: string): string {
+    if (!value) return '';
+    // 移除千位分隔符（逗号）、空格、货币符号等
+    return String(value)
+      .trim()
+      .replace(/,/g, '') // 移除逗号（千位分隔符）
+      .replace(/\s/g, '') // 移除空格
+      .replace(/[₿$€£¥฿]/g, '') // 移除常见货币符号
+      .replace(/[^\d.-]/g, ''); // 只保留数字、小数点和负号
+  }
+
+  /**
    * 根据字段类型解析值
    */
   private parseFieldValue(
@@ -630,17 +646,20 @@ export class UploadService {
     const decimalFields = ['ordered_sales', 'confirmed_sales'];
 
     if (intFields.includes(fieldName)) {
-      const num = parseInt(String(value), 10);
+      const cleaned = this.cleanNumberString(String(value));
+      const num = parseInt(cleaned, 10);
       return isNaN(num) ? null : num;
     }
 
     if (floatFields.includes(fieldName)) {
-      const num = parseFloat(String(value));
+      const cleaned = this.cleanNumberString(String(value));
+      const num = parseFloat(cleaned);
       return isNaN(num) ? null : num;
     }
 
     if (decimalFields.includes(fieldName)) {
-      const num = parseFloat(String(value));
+      const cleaned = this.cleanNumberString(String(value));
+      const num = parseFloat(cleaned);
       return isNaN(num) ? null : num;
     }
 
@@ -710,13 +729,26 @@ export class UploadService {
 
       const parseNumber = (value: string | undefined): number | null => {
         if (!value || value === '') return null;
-        const num = parseInt(value, 10);
+        // 清理数字字符串（移除千位分隔符等）
+        const cleaned = value
+          .trim()
+          .replace(/,/g, '') // 移除逗号（千位分隔符）
+          .replace(/\s/g, '') // 移除空格
+          .replace(/[^\d.-]/g, ''); // 只保留数字、小数点和负号
+        const num = parseInt(cleaned, 10);
         return isNaN(num) ? null : num;
       };
 
       const parseDecimal = (value: string | undefined): number | null => {
         if (!value || value === '') return null;
-        const num = parseFloat(value);
+        // 清理数字字符串（移除千位分隔符等）
+        const cleaned = value
+          .trim()
+          .replace(/,/g, '') // 移除逗号（千位分隔符）
+          .replace(/\s/g, '') // 移除空格
+          .replace(/[₿$€£¥฿]/g, '') // 移除常见货币符号
+          .replace(/[^\d.-]/g, ''); // 只保留数字、小数点和负号
+        const num = parseFloat(cleaned);
         return isNaN(num) ? null : num;
       };
 
@@ -1213,7 +1245,14 @@ export class UploadService {
       // 解析数值字段
       const parseNumber = (value: string | null): number | null => {
         if (!value || value === '' || value === '-') return null;
-        const num = parseFloat(value);
+        // 清理数字字符串（移除千位分隔符等）
+        const cleaned = value
+          .trim()
+          .replace(/,/g, '') // 移除逗号（千位分隔符）
+          .replace(/\s/g, '') // 移除空格
+          .replace(/[₿$€£¥฿]/g, '') // 移除常见货币符号
+          .replace(/[^\d.-]/g, ''); // 只保留数字、小数点和负号
+        const num = parseFloat(cleaned);
         return isNaN(num) ? null : num;
       };
 
