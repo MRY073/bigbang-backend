@@ -12,8 +12,6 @@ import { ProductsService } from './products.service';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { UpdateStageDto } from './dto/update-stage.dto';
 import { TestingMonitorDto } from './dto/testing-monitor.dto';
-import { AdTrendDto } from './dto/ad-trend.dto';
-import { AdRatioDto } from './dto/ad-ratio.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -127,77 +125,6 @@ export class ProductsController {
         shopID,
         shopName,
       );
-
-      return res.status(HttpStatus.OK).json({
-        success: true,
-        message: '查询成功',
-        data,
-      });
-    } catch (error: unknown) {
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        message: '查询失败',
-        error: error instanceof Error ? error.message : '未知错误',
-      });
-    }
-  }
-
-  /**
-   * 30天广告占比趋势
-   * GET /products/ad-trend?shopID=店铺ID
-   */
-  @Get('ad-trend')
-  async getAdTrend(@Query() query: AdTrendDto, @Res() res: Response) {
-    const { shopID } = query;
-
-    if (!shopID) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: 'shopID 参数不能为空',
-      });
-    }
-
-    try {
-      const data = await this.productsService.getAdTrend30Days(shopID);
-
-      return res.status(HttpStatus.OK).json({
-        success: true,
-        message: '查询成功',
-        data,
-      });
-    } catch (error: unknown) {
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        message: '查询失败',
-        error: error instanceof Error ? error.message : '未知错误',
-      });
-    }
-  }
-
-  /**
-   * 指定日期广告占比
-   * GET /products/ad-ratio?shopID=店铺ID&date=日期
-   */
-  @Get('ad-ratio')
-  async getAdRatio(@Query() query: AdRatioDto, @Res() res: Response) {
-    const { shopID, date } = query;
-
-    if (!shopID) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: 'shopID 参数不能为空',
-      });
-    }
-
-    if (!date) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: 'date 参数不能为空',
-      });
-    }
-
-    try {
-      const data = await this.productsService.getAdRatioByDate(shopID, date);
 
       return res.status(HttpStatus.OK).json({
         success: true,

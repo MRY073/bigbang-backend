@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { UploadModule } from './upload/upload.module';
 import { ProductsModule } from './products/products.module';
+import { AdAnalysisModule } from './ad-analysis/ad-analysis.module';
 // import { StatsModule } from './stats/stats.module';
 import { DatabaseModule } from './database/database.module';
 
@@ -24,6 +25,7 @@ import { DatabaseModule } from './database/database.module';
     AuthModule,
     UploadModule,
     ProductsModule,
+    AdAnalysisModule,
     // StatsModule,
   ],
   controllers: [AppController],
