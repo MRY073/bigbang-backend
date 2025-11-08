@@ -1,14 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { MysqlService } from '../database/mysql.service';
+import { calculateShortTermVolatilityVsLongTermBaseline } from '../utils/statistics';
 
 // ==================== 预警等级阈值配置 ====================
-// 标准差系数阈值（标准差相对于平均值的比例）
-const WARNING_LEVEL_THRESHOLDS = {
-  严重: 0.5, // 标准差/平均值 >= 0.5 时，判定为"严重"
-  一般: 0.3, // 标准差/平均值 >= 0.3 且 < 0.5 时，判定为"一般"
-  轻微: 0.15, // 标准差/平均值 >= 0.15 且 < 0.3 时，判定为"轻微"
-  正常: 0.0, // 标准差/平均值 < 0.15 时，判定为"正常"
+// 变化指数阈值
+const CHANGE_INDEX_THRESHOLDS = {
+  极小: 10, // 0 ~ 10: 基本稳定，几乎无波动
+  轻微: 30, // 10 ~ 30: 轻微波动，不影响判断
+  一般: 60, // 30 ~ 60: 中等波动，值得关注
+  明显: 80, // 60 ~ 80: 波动较大，需要关注趋势
+  剧烈: 100, // 80 ~ 100: 波动非常大，风险高或异常明显
 };
+
+// 预警等级映射（基于变化指数）- 保留用于未来扩展
+// const WARNING_LEVEL_MAP = {
+//   极小: '正常',
+//   轻微: '轻微',
+//   一般: '一般',
+//   明显: '严重',
+//   剧烈: '严重',
+// };
 
 // 需要评估的指标权重（可根据业务需求调整）
 const METRIC_WEIGHTS = {
@@ -21,6 +32,293 @@ const METRIC_WEIGHTS = {
 @Injectable()
 export class ProductsService {
   constructor(private readonly mysqlService: MysqlService) {}
+
+  /**
+   * 计算变化指数
+   * @param values 按日期排序的数值数组（从早到晚）
+   * @returns 变化指数信息
+   */
+  private calculateChangeIndex(values: number[]): {
+    direction: '+' | '-';
+    strength: number;
+    level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+  } {
+    // 如果数据少于2个，无法计算变化
+    if (values.length < 2) {
+      return {
+        direction: '+',
+        strength: 0,
+        level: '极小',
+      };
+    }
+
+    // 过滤掉无效值（0或负数可能表示无数据）
+    const validValues = values.filter((v) => v > 0);
+    if (validValues.length < 2) {
+      return {
+        direction: '+',
+        strength: 0,
+        level: '极小',
+      };
+    }
+
+    // 计算每日增幅 ri = (今天值 - 前一天值) / 前一天值
+    const dailyRates: number[] = [];
+    for (let i = 1; i < validValues.length; i++) {
+      const prevValue = validValues[i - 1];
+      const currValue = validValues[i];
+      if (prevValue > 0) {
+        const rate = (currValue - prevValue) / prevValue;
+        dailyRates.push(rate);
+      }
+    }
+
+    if (dailyRates.length === 0) {
+      return {
+        direction: '+',
+        strength: 0,
+        level: '极小',
+      };
+    }
+
+    // 计算平均变化率（趋势方向）
+    const meanRate =
+      dailyRates.reduce((sum, rate) => sum + rate, 0) / dailyRates.length;
+    const direction: '+' | '-' = meanRate >= 0 ? '+' : '-';
+
+    // 计算变化强度（波动剧烈程度）
+    const maxRate = Math.max(...dailyRates);
+    const minRate = Math.min(...dailyRates);
+    const maxAmplitude = maxRate - minRate;
+    const changeIndex = Math.min(maxAmplitude * 100, 100);
+
+    // 确定变化等级
+    let level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    if (changeIndex < CHANGE_INDEX_THRESHOLDS.极小) {
+      level = '极小';
+    } else if (changeIndex < CHANGE_INDEX_THRESHOLDS.轻微) {
+      level = '轻微';
+    } else if (changeIndex < CHANGE_INDEX_THRESHOLDS.一般) {
+      level = '一般';
+    } else if (changeIndex < CHANGE_INDEX_THRESHOLDS.明显) {
+      level = '明显';
+    } else {
+      level = '剧烈';
+    }
+
+    return {
+      direction,
+      strength: Math.round(changeIndex * 100) / 100, // 保留2位小数
+      level,
+    };
+  }
+
+  /**
+   * 计算滑动窗口波动率（使用短期波动相对长期基准指标）
+   * @param values 按日期排序的数值数组（从早到晚）
+   * @returns 每个滑动窗口的波动率信息数组
+   */
+  private calculateSlidingVolatility(values: number[]): Array<{
+    window: number;
+    direction: '+' | '-';
+    strength: number;
+    level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+  }> {
+    const windows = [1, 3, 7, 15, 30]; // 滑动窗口天数
+    const longWindow = 30; // 长期基准窗口
+    const result: Array<{
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    }> = [];
+
+    // 过滤掉无效值（0或负数可能表示无数据）
+    const validValues = values.filter((v) => v > 0);
+
+    // 如果有效数据少于2个，所有窗口都返回默认值
+    if (validValues.length < 2) {
+      return windows.map((window) => ({
+        window,
+        direction: '+' as const,
+        strength: 0,
+        level: '极小' as const,
+      }));
+    }
+
+    // 对每个滑动窗口计算波动率
+    for (const shortWindow of windows) {
+      // 确定实际使用的短期窗口
+      const actualShortWindow = Math.min(shortWindow, validValues.length);
+
+      // 如果短期窗口大于等于数据量，使用所有数据
+      if (actualShortWindow >= validValues.length) {
+        // 数据不足，返回默认值
+        result.push({
+          window: shortWindow,
+          direction: '+' as const,
+          strength: 0,
+          level: '极小' as const,
+        });
+        continue;
+      }
+
+      // 确定长期窗口：如果短期窗口等于30天，使用更长的长期窗口（60天或所有可用数据）
+      let actualLongWindow: number;
+      if (shortWindow >= longWindow) {
+        // 对于30天窗口，使用60天作为长期窗口（如果数据足够），否则使用所有可用数据
+        actualLongWindow = Math.min(60, validValues.length);
+        // 如果长期窗口小于等于短期窗口，使用所有可用数据
+        if (actualLongWindow <= actualShortWindow) {
+          actualLongWindow = validValues.length;
+        }
+      } else {
+        // 对于其他窗口，使用30天作为长期窗口
+        actualLongWindow = Math.min(longWindow, validValues.length);
+      }
+
+      // 如果数据不足长期窗口，使用所有数据作为长期基准
+      if (validValues.length < actualLongWindow) {
+        // 数据不足长期窗口，无法计算比值，返回默认值
+        result.push({
+          window: shortWindow,
+          direction: '+' as const,
+          strength: 0,
+          level: '极小' as const,
+        });
+        continue;
+      }
+
+      // 确保长期窗口大于短期窗口
+      if (actualLongWindow <= actualShortWindow) {
+        result.push({
+          window: shortWindow,
+          direction: '+' as const,
+          strength: 0,
+          level: '极小' as const,
+        });
+        continue;
+      }
+
+      // 计算短期波动相对长期基准的比值
+      const volatilityRatios = calculateShortTermVolatilityVsLongTermBaseline(
+        validValues,
+        actualShortWindow,
+        actualLongWindow,
+        true, // 使用样本标准差
+      );
+
+      // 获取最后一个比值（最新时间点的比值）
+      const lastRatio = volatilityRatios[volatilityRatios.length - 1];
+
+      // 如果比值为 null，返回默认值
+      if (lastRatio === null) {
+        result.push({
+          window: shortWindow,
+          direction: '+' as const,
+          strength: 0,
+          level: '极小' as const,
+        });
+        continue;
+      }
+
+      // 计算方向：通过比较短期均值和长期均值来判断
+      const shortMean =
+        validValues
+          .slice(validValues.length - actualShortWindow)
+          .reduce((sum, val) => sum + val, 0) / actualShortWindow;
+      const longMean =
+        validValues
+          .slice(validValues.length - actualLongWindow)
+          .reduce((sum, val) => sum + val, 0) / actualLongWindow;
+
+      // 方向：短期均值相对于长期均值的变化
+      const direction: '+' | '-' = shortMean >= longMean ? '+' : '-';
+
+      // 计算强度：基于波动率比值
+      // 比值 > 1 表示短期波动大于长期波动（异常波动）
+      // 比值 < 1 表示短期波动小于长期波动（相对稳定）
+      // 将比值映射到 0~100 范围
+      // 公式：strength = min((ratio - 1) * 50 + 50, 100)，但需要处理 ratio < 1 的情况
+      // 更合理的映射：ratio 在 0~2 之间，映射到 0~100
+      // 当 ratio = 1 时，strength = 50（中等）
+      // 当 ratio = 2 时，strength = 100（剧烈）
+      // 当 ratio = 0 时，strength = 0（极小）
+      let strength: number;
+      if (lastRatio <= 0) {
+        strength = 0;
+      } else if (lastRatio >= 2) {
+        strength = 100;
+      } else {
+        // 线性映射：ratio 0~2 映射到 strength 0~100
+        // 当 ratio = 1 时，strength = 50
+        strength = Math.min((lastRatio / 2) * 100, 100);
+      }
+
+      // 如果比值接近1（0.8-1.2），表示波动正常，降低强度
+      if (lastRatio >= 0.8 && lastRatio <= 1.2) {
+        strength = Math.max(0, strength - 20); // 降低20点
+      }
+
+      // 确定变化等级
+      let level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      if (strength < CHANGE_INDEX_THRESHOLDS.极小) {
+        level = '极小';
+      } else if (strength < CHANGE_INDEX_THRESHOLDS.轻微) {
+        level = '轻微';
+      } else if (strength < CHANGE_INDEX_THRESHOLDS.一般) {
+        level = '一般';
+      } else if (strength < CHANGE_INDEX_THRESHOLDS.明显) {
+        level = '明显';
+      } else {
+        level = '剧烈';
+      }
+
+      result.push({
+        window: shortWindow,
+        direction,
+        strength: Math.round(strength * 100) / 100, // 保留2位小数
+        level,
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * 生成警告提示语
+   * @param metricName 指标名称
+   * @param changeIndex 变化指数信息
+   * @returns 警告提示语
+   */
+  private generateWarningMessage(
+    metricName: string,
+    changeIndex: {
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+  ): string {
+    const { direction, strength, level } = changeIndex;
+    const directionText = direction === '+' ? '上升' : '下降';
+    const levelText = {
+      极小: '基本稳定',
+      轻微: '轻微波动',
+      一般: '中等波动',
+      明显: '波动较大',
+      剧烈: '波动剧烈',
+    }[level];
+
+    if (level === '极小' || level === '轻微') {
+      return `${metricName}${levelText}，趋势${directionText}，变化强度${strength.toFixed(2)}%`;
+    } else if (level === '一般') {
+      return `⚠️ ${metricName}${levelText}，趋势${directionText}，变化强度${strength.toFixed(2)}%，值得关注`;
+    } else if (level === '明显') {
+      return `🔶 ${metricName}${levelText}，趋势${directionText}，变化强度${strength.toFixed(2)}%，需要关注趋势变化`;
+    } else {
+      return `🔴 ${metricName}${levelText}，趋势${directionText}，变化强度${strength.toFixed(2)}%，风险较高，建议及时处理`;
+    }
+  }
 
   /**
    * 查询店铺商品列表
@@ -902,12 +1200,28 @@ export class ProductsService {
       name: string;
       image?: string | null;
       visitorsAvg: number[];
-      visitorsStd: number[];
+      visitorsVolatility: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
       adCostAvg: number[];
-      adCostStd: number[];
+      adCostVolatility: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
       salesAvg: number[];
-      salesStd: number[];
+      salesVolatility: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
       warningLevel: '严重' | '一般' | '轻微' | '正常';
+      warningMessages: string[];
     }>
   > {
     console.log('=== getFinishedLinkMonitorData 函数开始执行 ===');
@@ -968,11 +1282,67 @@ export class ProductsService {
 
         // 初始化结果数组
         const visitorsAvg: number[] = [];
-        const visitorsStd: number[] = [];
         const adCostAvg: number[] = [];
-        const adCostStd: number[] = [];
         const salesAvg: number[] = [];
-        const salesStd: number[] = [];
+
+        // 查询30天的完整数据用于计算滑动窗口波动率
+        const endDate30 = new Date(currentDate);
+        const startDate30 = new Date(currentDate);
+        startDate30.setDate(endDate30.getDate() - 29); // 30天数据
+        const startDate30Str = startDate30.toISOString().split('T')[0];
+        const endDate30Str = endDate30.toISOString().split('T')[0];
+
+        // 查询30天的访客数原始数据
+        const visitorsData30 = await this.mysqlService.query<{
+          visitors: number | null;
+        }>(
+          `SELECT visitors
+          FROM daily_product_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date`,
+          [shopID, product_id, startDate30Str, endDate30Str],
+        );
+        const visitorsValues30 = visitorsData30
+          .map((row) => row.visitors)
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => Number(value) || 0);
+
+        // 查询30天的广告花费原始数据
+        const adCostData30 = await this.mysqlService.query<{
+          spend: number | null;
+        }>(
+          `SELECT spend
+          FROM ad_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date`,
+          [shopID, product_id, startDate30Str, endDate30Str],
+        );
+        const adCostValues30 = adCostData30
+          .map((row) => row.spend)
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => Number(value) || 0);
+
+        // 查询30天的销售额原始数据
+        const salesData30 = await this.mysqlService.query<{
+          confirmed_sales: number | null;
+        }>(
+          `SELECT confirmed_sales
+          FROM daily_product_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date`,
+          [shopID, product_id, startDate30Str, endDate30Str],
+        );
+        const salesValues30 = salesData30
+          .map((row) => row.confirmed_sales)
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => Number(value) || 0);
+
+        // 计算滑动窗口波动率
+        const visitorsVolatility =
+          this.calculateSlidingVolatility(visitorsValues30);
+        const adCostVolatility =
+          this.calculateSlidingVolatility(adCostValues30);
+        const salesVolatility = this.calculateSlidingVolatility(salesValues30);
 
         // 对每个时间维度计算统计数据
         for (const days of timeDimensions) {
@@ -988,57 +1358,53 @@ export class ProductsService {
           );
 
           try {
-            // 查询访客数统计数据（从 daily_product_stats 表）
-            const visitorsStats = await this.mysqlService.queryOne<{
-              avg_visitors: number | null;
-              stddev_visitors: number | null;
+            // 查询访客数原始数据（从 daily_product_stats 表）
+            const visitorsData = await this.mysqlService.query<{
+              visitors: number | null;
             }>(
-              `SELECT 
-                AVG(visitors) as avg_visitors,
-                STDDEV_POP(visitors) as stddev_visitors
+              `SELECT visitors
               FROM daily_product_stats
               WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              GROUP BY product_id`,
+              ORDER BY date`,
               [shopID, product_id, startDateStr, endDateStr],
             );
 
-            const visitorsAvgValue =
-              visitorsStats && visitorsStats.avg_visitors !== null
-                ? Number(visitorsStats.avg_visitors) || 0
-                : 0;
-            const visitorsStdValue =
-              visitorsStats && visitorsStats.stddev_visitors !== null
-                ? Number(visitorsStats.stddev_visitors) || 0
-                : 0;
+            const visitorsValues = visitorsData
+              .map((row) => row.visitors)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let visitorsAvgValue = 0;
+            if (visitorsValues.length > 0) {
+              const sum = visitorsValues.reduce((acc, val) => acc + val, 0);
+              visitorsAvgValue = sum / visitorsValues.length;
+            }
 
             visitorsAvg.push(visitorsAvgValue);
-            visitorsStd.push(visitorsStdValue);
 
-            // 查询广告花费统计数据（从 ad_stats 表）
-            const adCostStats = await this.mysqlService.queryOne<{
-              avg_spend: number | null;
-              stddev_spend: number | null;
+            // 查询广告花费原始数据（从 ad_stats 表）
+            const adCostData = await this.mysqlService.query<{
+              spend: number | null;
             }>(
-              `SELECT 
-                AVG(spend) as avg_spend,
-                STDDEV_POP(spend) as stddev_spend
+              `SELECT spend
               FROM ad_stats
               WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              GROUP BY product_id`,
+              ORDER BY date`,
               [shopID, product_id, startDateStr, endDateStr],
             );
 
-            const adCostAvgValue =
-              adCostStats && adCostStats.avg_spend !== null
-                ? Number(adCostStats.avg_spend) || 0
-                : 0;
-            const adCostStdValue =
-              adCostStats && adCostStats.stddev_spend !== null
-                ? Number(adCostStats.stddev_spend) || 0
-                : 0;
+            const adCostValues = adCostData
+              .map((row) => row.spend)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let adCostAvgValue = 0;
+            if (adCostValues.length > 0) {
+              const sum = adCostValues.reduce((acc, val) => acc + val, 0);
+              adCostAvgValue = sum / adCostValues.length;
+            }
 
             adCostAvg.push(adCostAvgValue);
-            adCostStd.push(adCostStdValue);
 
             // 查询销售额原始数据（从 daily_product_stats 表的 confirmed_sales 字段）
             const salesData = await this.mysqlService.query<{
@@ -1051,74 +1417,141 @@ export class ProductsService {
               [shopID, product_id, startDateStr, endDateStr],
             );
 
-            // 使用 JavaScript 计算平均值和标准差
             const salesValues = salesData
               .map((row) => row.confirmed_sales)
               .filter((value) => value !== null && value !== undefined)
               .map((value) => Number(value) || 0);
 
             let salesAvgValue = 0;
-            let salesStdValue = 0;
-
             if (salesValues.length > 0) {
-              // 计算平均值
               const sum = salesValues.reduce((acc, val) => acc + val, 0);
               salesAvgValue = sum / salesValues.length;
-
-              // 计算标准差
-              if (salesValues.length > 1) {
-                const variance =
-                  salesValues.reduce(
-                    (acc, val) => acc + Math.pow(val - salesAvgValue, 2),
-                    0,
-                  ) / salesValues.length;
-                salesStdValue = Math.sqrt(variance);
-              } else {
-                salesStdValue = 0;
-              }
             }
 
             salesAvg.push(salesAvgValue);
-            salesStd.push(salesStdValue);
 
             console.log(
-              `    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}, std=${visitorsStdValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}, std=${adCostStdValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)}, std=${salesStdValue.toFixed(2)})`,
+              `    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)})`,
             );
           } catch (error) {
             console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
-            // 发生错误时，设置为0
+            // 发生错误时，设置为默认值
             visitorsAvg.push(0);
-            visitorsStd.push(0);
             adCostAvg.push(0);
-            adCostStd.push(0);
             salesAvg.push(0);
-            salesStd.push(0);
           }
         }
 
-        // 3. 计算预警等级
-        const warningLevel = this.calculateWarningLevel(
-          visitorsAvg,
-          visitorsStd,
-          adCostAvg,
-          adCostStd,
-          salesAvg,
-          salesStd,
+        // 3. 基于滑动窗口波动率计算预警等级和生成警告信息
+        // 使用1天和3天窗口的波动率来判断预警等级
+        const visitors1DayVolatility = visitorsVolatility.find(
+          (v) => v.window === 1,
+        );
+        const visitors3DayVolatility = visitorsVolatility.find(
+          (v) => v.window === 3,
+        );
+        const adCost1DayVolatility = adCostVolatility.find(
+          (v) => v.window === 1,
+        );
+        const adCost3DayVolatility = adCostVolatility.find(
+          (v) => v.window === 3,
+        );
+        const sales1DayVolatility = salesVolatility.find((v) => v.window === 1);
+        const sales3DayVolatility = salesVolatility.find((v) => v.window === 3);
+
+        // 计算预警等级（基于波动率）
+        const warningLevel = this.calculateWarningLevelFromVolatility(
+          visitors1DayVolatility,
+          visitors3DayVolatility,
+          adCost1DayVolatility,
+          adCost3DayVolatility,
+          sales1DayVolatility,
+          sales3DayVolatility,
         );
 
+        // 生成警告提示语
+        const warningMessages: string[] = [];
+
+        // 检查1天窗口的波动率，生成警告信息
+        if (
+          visitors1DayVolatility &&
+          (visitors1DayVolatility.level === '明显' ||
+            visitors1DayVolatility.level === '剧烈')
+        ) {
+          warningMessages.push(
+            this.generateWarningMessage('访客数', visitors1DayVolatility),
+          );
+        }
+        if (
+          adCost1DayVolatility &&
+          (adCost1DayVolatility.level === '明显' ||
+            adCost1DayVolatility.level === '剧烈')
+        ) {
+          warningMessages.push(
+            this.generateWarningMessage('广告花费', adCost1DayVolatility),
+          );
+        }
+        if (
+          sales1DayVolatility &&
+          (sales1DayVolatility.level === '明显' ||
+            sales1DayVolatility.level === '剧烈')
+        ) {
+          warningMessages.push(
+            this.generateWarningMessage('销售额', sales1DayVolatility),
+          );
+        }
+
+        // 如果1天窗口没有明显波动，检查3天窗口
+        if (warningMessages.length === 0) {
+          if (
+            visitors3DayVolatility &&
+            (visitors3DayVolatility.level === '一般' ||
+              visitors3DayVolatility.level === '明显' ||
+              visitors3DayVolatility.level === '剧烈')
+          ) {
+            warningMessages.push(
+              this.generateWarningMessage('访客数', visitors3DayVolatility),
+            );
+          }
+          if (
+            adCost3DayVolatility &&
+            (adCost3DayVolatility.level === '一般' ||
+              adCost3DayVolatility.level === '明显' ||
+              adCost3DayVolatility.level === '剧烈')
+          ) {
+            warningMessages.push(
+              this.generateWarningMessage('广告花费', adCost3DayVolatility),
+            );
+          }
+          if (
+            sales3DayVolatility &&
+            (sales3DayVolatility.level === '一般' ||
+              sales3DayVolatility.level === '明显' ||
+              sales3DayVolatility.level === '剧烈')
+          ) {
+            warningMessages.push(
+              this.generateWarningMessage('销售额', sales3DayVolatility),
+            );
+          }
+        }
+
         console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
+        if (warningMessages.length > 0) {
+          console.log(`  [${product_id}] 警告信息:`, warningMessages);
+        }
 
         return {
           id: product_id,
           name: product_name,
           image: product_image,
           visitorsAvg,
-          visitorsStd,
+          visitorsVolatility,
           adCostAvg,
-          adCostStd,
+          adCostVolatility,
           salesAvg,
-          salesStd,
+          salesVolatility,
           warningLevel,
+          warningMessages,
         };
       }),
     );
@@ -1131,22 +1564,136 @@ export class ProductsService {
   }
 
   /**
-   * 计算预警等级
-   * @param visitorsAvg 访客数平均值数组 [30日, 15日, 7日, 3日, 1日]
-   * @param visitorsStd 访客数标准差数组 [30日, 15日, 7日, 3日, 1日]
-   * @param adCostAvg 广告花费平均值数组 [30日, 15日, 7日, 3日, 1日]
-   * @param adCostStd 广告花费标准差数组 [30日, 15日, 7日, 3日, 1日]
-   * @param salesAvg 销售额平均值数组 [30日, 15日, 7日, 3日, 1日]
-   * @param salesStd 销售额标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * 基于滑动窗口波动率计算预警等级
+   * @param visitors1Day 访客数1天窗口波动率
+   * @param visitors3Day 访客数3天窗口波动率
+   * @param adCost1Day 广告花费1天窗口波动率
+   * @param adCost3Day 广告花费3天窗口波动率
+   * @param sales1Day 销售额1天窗口波动率
+   * @param sales3Day 销售额3天窗口波动率
+   * @returns 预警等级
+   */
+  private calculateWarningLevelFromVolatility(
+    visitors1Day?: {
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+    visitors3Day?: {
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+    adCost1Day?: {
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+    adCost3Day?: {
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+    sales1Day?: {
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+    sales3Day?: {
+      window: number;
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    },
+  ): '严重' | '一般' | '轻微' | '正常' {
+    // 将变化等级转换为数值分数（用于加权计算）
+    const levelToScore = (
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈',
+    ): number => {
+      switch (level) {
+        case '极小':
+          return 0;
+        case '轻微':
+          return 0.2;
+        case '一般':
+          return 0.5;
+        case '明显':
+          return 0.8;
+        case '剧烈':
+          return 1.0;
+        default:
+          return 0;
+      }
+    };
+
+    // 1日的变化指数分数
+    const scoreVisitors1Day = visitors1Day
+      ? levelToScore(visitors1Day.level)
+      : 0;
+    const scoreAdCost1Day = adCost1Day ? levelToScore(adCost1Day.level) : 0;
+    const scoreSales1Day = sales1Day ? levelToScore(sales1Day.level) : 0;
+
+    // 3日的变化指数分数
+    const scoreVisitors3Day = visitors3Day
+      ? levelToScore(visitors3Day.level)
+      : 0;
+    const scoreAdCost3Day = adCost3Day ? levelToScore(adCost3Day.level) : 0;
+    const scoreSales3Day = sales3Day ? levelToScore(sales3Day.level) : 0;
+
+    // 计算加权分数
+    const score1Day =
+      scoreVisitors1Day * METRIC_WEIGHTS.visitors +
+      scoreAdCost1Day * METRIC_WEIGHTS.adCost +
+      scoreSales1Day * METRIC_WEIGHTS.sales;
+
+    const score3Day =
+      scoreVisitors3Day * METRIC_WEIGHTS.visitors +
+      scoreAdCost3Day * METRIC_WEIGHTS.adCost +
+      scoreSales3Day * METRIC_WEIGHTS.sales;
+
+    // 计算综合预警分数（1日权重0.6，3日权重0.4）
+    const compositeScore = score1Day * 0.6 + score3Day * 0.4;
+
+    // 根据综合分数判断预警等级
+    if (compositeScore >= 0.8) {
+      return '严重';
+    } else if (compositeScore >= 0.5) {
+      return '一般';
+    } else if (compositeScore >= 0.2) {
+      return '轻微';
+    } else {
+      return '正常';
+    }
+  }
+
+  /**
+   * 计算预警等级（保留旧方法，用于兼容）
+   * @param visitorsChangeIndex 访客数变化指数数组 [30日, 15日, 7日, 3日, 1日]
+   * @param adCostChangeIndex 广告花费变化指数数组 [30日, 15日, 7日, 3日, 1日]
+   * @param salesChangeIndex 销售额变化指数数组 [30日, 15日, 7日, 3日, 1日]
    * @returns 预警等级
    */
   private calculateWarningLevel(
-    visitorsAvg: number[],
-    visitorsStd: number[],
-    adCostAvg: number[],
-    adCostStd: number[],
-    salesAvg: number[],
-    salesStd: number[],
+    visitorsChangeIndex: Array<{
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    }>,
+    adCostChangeIndex: Array<{
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    }>,
+    salesChangeIndex: Array<{
+      direction: '+' | '-';
+      strength: number;
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+    }>,
   ): '严重' | '一般' | '轻微' | '正常' {
     // 获取最近的时间维度（1日和3日）的索引
     // 数组顺序：[30日, 15日, 7日, 3日, 1日]
@@ -1154,56 +1701,60 @@ export class ProductsService {
     const index1Day = 4; // 1日的索引
     const index3Day = 3; // 3日的索引
 
-    // 计算1日和3日的变异系数（CV = 标准差/平均值）
-    const calculateCV = (avg: number, std: number): number => {
-      if (avg === 0 || avg < 0.001) {
-        return std > 0.001 ? 1.0 : 0; // 如果平均值为0但标准差不为0，返回1.0
+    // 将变化等级转换为数值分数（用于加权计算）
+    const levelToScore = (
+      level: '极小' | '轻微' | '一般' | '明显' | '剧烈',
+    ): number => {
+      switch (level) {
+        case '极小':
+          return 0;
+        case '轻微':
+          return 0.2;
+        case '一般':
+          return 0.5;
+        case '明显':
+          return 0.8;
+        case '剧烈':
+          return 1.0;
+        default:
+          return 0;
       }
-      return std / avg;
     };
 
-    // 1日的变异系数
-    const cvVisitors1Day = calculateCV(
-      visitorsAvg[index1Day],
-      visitorsStd[index1Day],
+    // 1日的变化指数分数
+    const scoreVisitors1Day = levelToScore(
+      visitorsChangeIndex[index1Day].level,
     );
-    const cvAdCost1Day = calculateCV(
-      adCostAvg[index1Day],
-      adCostStd[index1Day],
-    );
-    const cvSales1Day = calculateCV(salesAvg[index1Day], salesStd[index1Day]);
+    const scoreAdCost1Day = levelToScore(adCostChangeIndex[index1Day].level);
+    const scoreSales1Day = levelToScore(salesChangeIndex[index1Day].level);
 
-    // 3日的变异系数
-    const cvVisitors3Day = calculateCV(
-      visitorsAvg[index3Day],
-      visitorsStd[index3Day],
+    // 3日的变化指数分数
+    const scoreVisitors3Day = levelToScore(
+      visitorsChangeIndex[index3Day].level,
     );
-    const cvAdCost3Day = calculateCV(
-      adCostAvg[index3Day],
-      adCostStd[index3Day],
-    );
-    const cvSales3Day = calculateCV(salesAvg[index3Day], salesStd[index3Day]);
+    const scoreAdCost3Day = levelToScore(adCostChangeIndex[index3Day].level);
+    const scoreSales3Day = levelToScore(salesChangeIndex[index3Day].level);
 
     // 计算加权分数
     const score1Day =
-      cvVisitors1Day * METRIC_WEIGHTS.visitors +
-      cvAdCost1Day * METRIC_WEIGHTS.adCost +
-      cvSales1Day * METRIC_WEIGHTS.sales;
+      scoreVisitors1Day * METRIC_WEIGHTS.visitors +
+      scoreAdCost1Day * METRIC_WEIGHTS.adCost +
+      scoreSales1Day * METRIC_WEIGHTS.sales;
 
     const score3Day =
-      cvVisitors3Day * METRIC_WEIGHTS.visitors +
-      cvAdCost3Day * METRIC_WEIGHTS.adCost +
-      cvSales3Day * METRIC_WEIGHTS.sales;
+      scoreVisitors3Day * METRIC_WEIGHTS.visitors +
+      scoreAdCost3Day * METRIC_WEIGHTS.adCost +
+      scoreSales3Day * METRIC_WEIGHTS.sales;
 
     // 计算综合预警分数（1日权重0.6，3日权重0.4）
     const compositeScore = score1Day * 0.6 + score3Day * 0.4;
 
     // 根据综合分数判断预警等级
-    if (compositeScore >= WARNING_LEVEL_THRESHOLDS.严重) {
+    if (compositeScore >= 0.8) {
       return '严重';
-    } else if (compositeScore >= WARNING_LEVEL_THRESHOLDS.一般) {
+    } else if (compositeScore >= 0.5) {
       return '一般';
-    } else if (compositeScore >= WARNING_LEVEL_THRESHOLDS.轻微) {
+    } else if (compositeScore >= 0.2) {
       return '轻微';
     } else {
       return '正常';
