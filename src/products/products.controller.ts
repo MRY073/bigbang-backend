@@ -6,14 +6,17 @@ import {
   Query,
   HttpStatus,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ProductsService } from './products.service';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { UpdateStageDto } from './dto/update-stage.dto';
 import { TestingMonitorDto } from './dto/testing-monitor.dto';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('products')
+@UseGuards(AuthGuard) // 保护整个控制器，所有路由都需要鉴权
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 

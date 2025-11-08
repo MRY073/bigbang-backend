@@ -1,9 +1,11 @@
-import { Controller, Get, Query, HttpStatus, Res } from '@nestjs/common';
+import { Controller, Get, Query, HttpStatus, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { ProductsService } from './products.service';
 import { FinishedLinkMonitorDto } from './dto/finished-link-monitor.dto';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('finished')
+@UseGuards(AuthGuard) // 保护整个控制器，所有路由都需要鉴权
 export class FinishedLinkMonitorController {
   constructor(private readonly productsService: ProductsService) {}
 

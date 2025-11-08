@@ -79,4 +79,17 @@ export class AuthController {
 
     return res.status(HttpStatus.OK).json({ success: true, message: '已登录' });
   }
+
+  // 登出接口：清除 Cookie
+  @Post('logout')
+  logout(@Res() res: Response) {
+    res.clearCookie('auth_token', {
+      httpOnly: true,
+      path: '/',
+    });
+    return res.status(HttpStatus.OK).json({
+      success: true,
+      message: '登出成功',
+    });
+  }
 }

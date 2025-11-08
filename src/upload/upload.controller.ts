@@ -6,13 +6,16 @@ import {
   Body,
   HttpStatus,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { UploadService } from './upload.service';
 import { UploadDto } from './dto/upload.dto';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('upload')
+@UseGuards(AuthGuard) // 保护整个控制器，所有路由都需要鉴权
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
