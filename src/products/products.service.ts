@@ -1,6 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { MysqlService } from '../database/mysql.service';
 
+// ==================== 预警等级阈值配置 ====================
+// 标准差系数阈值（标准差相对于平均值的比例）
+const WARNING_LEVEL_THRESHOLDS = {
+  严重: 0.5, // 标准差/平均值 >= 0.5 时，判定为"严重"
+  一般: 0.3, // 标准差/平均值 >= 0.3 且 < 0.5 时，判定为"一般"
+  轻微: 0.15, // 标准差/平均值 >= 0.15 且 < 0.3 时，判定为"轻微"
+  正常: 0.0, // 标准差/平均值 < 0.15 时，判定为"正常"
+};
+
+// 需要评估的指标权重（可根据业务需求调整）
+const METRIC_WEIGHTS = {
+  visitors: 0.4, // 访客指标权重
+  adCost: 0.3, // 广告花费指标权重
+  sales: 0.3, // 销售额指标权重
+};
+// =========================================================
+
 @Injectable()
 export class ProductsService {
   constructor(private readonly mysqlService: MysqlService) {}
@@ -132,9 +149,7 @@ export class ProductsService {
     );
 
     if (!existing) {
-      throw new Error(
-        `商品不存在：shop_id=${shopID}, product_id=${productId}`,
-      );
+      throw new Error(`商品不存在：shop_id=${shopID}, product_id=${productId}`);
     }
 
     // 根据阶段类型构建更新字段
@@ -228,7 +243,11 @@ export class ProductsService {
     console.log('  - shop_id =', shopID);
     console.log('  - testing_stage_start IS NOT NULL');
     console.log('  - testing_stage_start <=', currentDate.toISOString());
-    console.log('  - (testing_stage_end IS NULL OR testing_stage_end >=', currentDate.toISOString(), ')');
+    console.log(
+      '  - (testing_stage_end IS NULL OR testing_stage_end >=',
+      currentDate.toISOString(),
+      ')',
+    );
 
     // 条件：shop_id = shopID 且 testing_stage_start 不为 null
     // 且当前时间在测款阶段时间范围内（如果 end 为 null，则只判断 start）
@@ -320,9 +339,9 @@ export class ProductsService {
             let adStatsQuery = `
               SELECT COALESCE(SUM(clicks), 0) as total_clicks
               FROM ad_stats
-              WHERE shop = ? AND product_id = ? AND date >= ?
+              WHERE shop_id = ? AND product_id = ? AND date >= ?
             `;
-            const adStatsParams: any[] = [shopName, product_id, startDateStr];
+            const adStatsParams: any[] = [shopID, product_id, startDateStr];
 
             if (endDateStr) {
               adStatsQuery += ' AND date <= ?';
@@ -340,21 +359,24 @@ export class ProductsService {
 
             if (adStatsResult && adStatsResult.total_clicks !== null) {
               totalClicks = Number(adStatsResult.total_clicks) || 0;
-              console.log(`  [${product_id}] ✅ 点击数统计成功: ${totalClicks}`);
+              console.log(
+                `  [${product_id}] ✅ 点击数统计成功: ${totalClicks}`,
+              );
             } else {
-              console.log(`  [${product_id}] ⚠️ 广告数据查询结果为空，点击数设为 0`);
+              console.log(
+                `  [${product_id}] ⚠️ 广告数据查询结果为空，点击数设为 0`,
+              );
             }
           } catch (error) {
             // 查询广告数据失败，设置为 0
-            console.warn(
-              `  [${product_id}] ❌ 查询广告数据失败:`,
-              error,
-            );
+            console.warn(`  [${product_id}] ❌ 查询广告数据失败:`, error);
             totalClicks = 0;
           }
 
           // 4. 查询 daily_product_stats 表的访客数和出单数合计
-          console.log(`\n  [${product_id}] 开始查询每日数据（访客数和出单数）...`);
+          console.log(
+            `\n  [${product_id}] 开始查询每日数据（访客数和出单数）...`,
+          );
           try {
             let dailyStatsQuery = `
               SELECT 
@@ -378,7 +400,10 @@ export class ProductsService {
               total_orders: number | null;
             }>(dailyStatsQuery, dailyStatsParams);
 
-            console.log(`  [${product_id}] 每日数据查询结果:`, dailyStatsResult);
+            console.log(
+              `  [${product_id}] 每日数据查询结果:`,
+              dailyStatsResult,
+            );
 
             if (dailyStatsResult) {
               totalVisitors = Number(dailyStatsResult.total_visitors) || 0;
@@ -396,10 +421,7 @@ export class ProductsService {
             }
           } catch (error) {
             // 查询每日数据失败，设置为 0
-            console.warn(
-              `  [${product_id}] ❌ 查询每日数据失败:`,
-              error,
-            );
+            console.warn(`  [${product_id}] ❌ 查询每日数据失败:`, error);
             totalVisitors = 0;
             totalOrders = 0;
           }
@@ -410,10 +432,7 @@ export class ProductsService {
           console.log(`     - 出单数: ${totalOrders}`);
         } catch (error) {
           // 整体查询失败，使用默认值 0
-          console.error(
-            `  [${product_id}] ❌ 统计商品数据失败:`,
-            error,
-          );
+          console.error(`  [${product_id}] ❌ 统计商品数据失败:`, error);
         }
 
         const productResult = {
@@ -448,13 +467,13 @@ export class ProductsService {
   /**
    * 判断商品在指定日期属于哪个阶段
    * @param productId 商品ID
-   * @param shop 商店名称
+   * @param shopID 店铺ID
    * @param targetDate 目标日期
    * @returns 阶段类型：'testing' | 'potential' | 'product' | 'abandoned' | null
    */
   private async getProductStageByDate(
     productId: string,
-    shop: string,
+    shopID: string,
     targetDate: Date,
   ): Promise<'testing' | 'potential' | 'product' | 'abandoned' | null> {
     try {
@@ -478,8 +497,8 @@ export class ProductsService {
           abandoned_stage_start,
           abandoned_stage_end
         FROM product_items
-        WHERE shop_name = ? AND product_id = ?`,
-        [shop, productId],
+        WHERE shop_id = ? AND product_id = ?`,
+        [shopID, productId],
       );
 
       if (!product) {
@@ -543,7 +562,7 @@ export class ProductsService {
       return null;
     } catch (error) {
       console.warn(
-        `判断商品阶段失败 (shop: ${shop}, product_id: ${productId}, date: ${targetDate.toISOString()}):`,
+        `判断商品阶段失败 (shopID: ${shopID}, product_id: ${productId}, date: ${targetDate.toISOString()}):`,
         error,
       );
       return null;
@@ -553,10 +572,10 @@ export class ProductsService {
   /**
    * 30天广告占比趋势
    * 计算近30天，每天的不同类型广告商品所属阶段的花费对比
-   * @param shop 商店ID（店铺名称）
+   * @param shopID 店铺ID
    * @returns 30天的趋势数据
    */
-  async getAdTrend30Days(shop: string): Promise<
+  async getAdTrend30Days(shopID: string): Promise<
     Array<{
       date: string; // 日期 YYYY-MM-DD
       testing_stage_spend: number; // 测款阶段花费
@@ -567,7 +586,7 @@ export class ProductsService {
     }>
   > {
     console.log('=== getAdTrend30Days 函数开始执行 ===');
-    console.log('接收到的店铺名称:', shop);
+    console.log('接收到的店铺ID:', shopID);
 
     // 计算近30天的日期范围
     const endDate = new Date();
@@ -591,9 +610,9 @@ export class ProductsService {
         date,
         COALESCE(spend, 0) as spend
       FROM ad_stats
-      WHERE shop = ? AND date >= ? AND date <= ?
+      WHERE shop_id = ? AND date >= ? AND date <= ?
       ORDER BY date ASC, product_id ASC`,
-      [shop, startDateStr, endDateStr],
+      [shopID, startDateStr, endDateStr],
     );
 
     console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
@@ -654,16 +673,17 @@ export class ProductsService {
     console.log(`开始处理 ${adStats.length} 条广告数据`);
 
     for (const ad of adStats) {
-      const dateStr = ad.date instanceof Date
-        ? ad.date.toISOString().split('T')[0]
-        : new Date(ad.date).toISOString().split('T')[0];
+      const dateStr =
+        ad.date instanceof Date
+          ? ad.date.toISOString().split('T')[0]
+          : new Date(ad.date).toISOString().split('T')[0];
       const spend = Number(ad.spend) || 0;
 
       if (spend <= 0) continue; // 跳过花费为0或null的数据
 
       const stage = await this.getProductStageByDate(
         ad.product_id,
-        shop,
+        shopID,
         new Date(dateStr),
       );
 
@@ -708,12 +728,12 @@ export class ProductsService {
    * 指定日期广告占比
    * 获取当天的不同阶段商品的广告花费
    * 只计算成品阶段商品的广告花费和产出，以及成品阶段合计的ROI
-   * @param shop 商店ID（店铺名称）
+   * @param shopID 店铺ID
    * @param date 日期（YYYY-MM-DD 格式）
    * @returns 指定日期的广告占比数据
    */
   async getAdRatioByDate(
-    shop: string,
+    shopID: string,
     date: string,
   ): Promise<{
     date: string;
@@ -730,7 +750,7 @@ export class ProductsService {
     };
   }> {
     console.log('=== getAdRatioByDate 函数开始执行 ===');
-    console.log('接收到的店铺名称:', shop);
+    console.log('接收到的店铺ID:', shopID);
     console.log('接收到的日期:', date);
 
     // 验证日期格式
@@ -756,9 +776,9 @@ export class ProductsService {
         COALESCE(sales_amount, 0) as sales_amount,
         COALESCE(roas, 0) as roas
       FROM ad_stats
-      WHERE shop = ? AND date = ?
+      WHERE shop_id = ? AND date = ?
       ORDER BY product_id ASC`,
-      [shop, dateStr],
+      [shopID, dateStr],
     );
 
     console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
@@ -799,7 +819,7 @@ export class ProductsService {
 
       const stage = await this.getProductStageByDate(
         ad.product_id,
-        shop,
+        shopID,
         targetDate,
       );
 
@@ -835,7 +855,8 @@ export class ProductsService {
     if (productStageSpend > 0) {
       // 方法1：使用加权平均ROI
       if (productStageWeightedRoi > 0) {
-        stageData.product_stage.roi = productStageWeightedRoi / productStageSpend;
+        stageData.product_stage.roi =
+          productStageWeightedRoi / productStageSpend;
       } else {
         // 方法2：如果没有ROI数据，使用销售额/花费计算
         stageData.product_stage.roi =
@@ -862,5 +883,330 @@ export class ProductsService {
       stages: stageData,
     };
   }
-}
 
+  /**
+   * 成品链接监控
+   * 获取成品阶段商品的监控数据，包括访客、广告花费、销售额等指标的变化趋势和预警信息
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param date 日期（YYYY-MM-DD 格式，可选，默认为当前日期）
+   * @returns 成品链接监控数据列表
+   */
+  async getFinishedLinkMonitorData(
+    shopID: string,
+    shopName: string,
+    date?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      image?: string | null;
+      visitorsAvg: number[];
+      visitorsStd: number[];
+      adCostAvg: number[];
+      adCostStd: number[];
+      salesAvg: number[];
+      salesStd: number[];
+      warningLevel: '严重' | '一般' | '轻微' | '正常';
+    }>
+  > {
+    console.log('=== getFinishedLinkMonitorData 函数开始执行 ===');
+    console.log('接收到的店铺ID:', shopID);
+    console.log('接收到的店铺名称:', shopName);
+    console.log('接收到的日期参数:', date || '未提供（使用当前日期）');
+
+    // 使用传入的日期参数，如果未提供则使用当前日期
+    let currentDate: Date;
+    if (date) {
+      // 解析日期字符串（格式：YYYY-MM-DD）
+      const [year, month, day] = date.split('-').map(Number);
+      currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    } else {
+      currentDate = new Date();
+    }
+    console.log('使用的基准日期:', currentDate.toISOString());
+
+    // 1. 查询当前处于成品阶段的商品
+    console.log('\n--- 第一步：查询当前处于成品阶段的商品 ---');
+    const finishedProducts = await this.mysqlService.query<{
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+    }>(
+      `SELECT 
+        product_id,
+        product_name,
+        product_image
+      FROM product_items 
+      WHERE shop_id = ? 
+        AND product_stage_start IS NOT NULL
+        AND product_stage_start <= ?
+        AND (product_stage_end IS NULL OR product_stage_end >= ?)
+      ORDER BY id ASC`,
+      [shopID, currentDate, currentDate],
+    );
+
+    console.log('查询到的成品商品数量:', finishedProducts?.length || 0);
+
+    if (!finishedProducts || finishedProducts.length === 0) {
+      console.log('⚠️ 未找到成品阶段的商品，返回空数组');
+      console.log('=== getFinishedLinkMonitorData 函数执行完成（无数据）===\n');
+      return [];
+    }
+
+    // 2. 对每个商品计算5个时间维度的统计数据
+    console.log('\n--- 第二步：对每个商品计算统计数据 ---');
+    console.log(`开始处理 ${finishedProducts.length} 个商品的统计数据`);
+
+    const timeDimensions = [30, 15, 7, 3, 1]; // 5个时间维度（天）
+
+    const result = await Promise.all(
+      finishedProducts.map(async (product) => {
+        const { product_id, product_name, product_image } = product;
+
+        console.log(`\n处理商品: ${product_id} (${product_name})`);
+
+        // 初始化结果数组
+        const visitorsAvg: number[] = [];
+        const visitorsStd: number[] = [];
+        const adCostAvg: number[] = [];
+        const adCostStd: number[] = [];
+        const salesAvg: number[] = [];
+        const salesStd: number[] = [];
+
+        // 对每个时间维度计算统计数据
+        for (const days of timeDimensions) {
+          const endDate = new Date(currentDate);
+          const startDate = new Date(currentDate);
+          startDate.setDate(endDate.getDate() - (days - 1));
+
+          const startDateStr = startDate.toISOString().split('T')[0];
+          const endDateStr = endDate.toISOString().split('T')[0];
+
+          console.log(
+            `  [${product_id}] 计算 ${days} 天数据 (${startDateStr} 到 ${endDateStr})`,
+          );
+
+          try {
+            // 查询访客数统计数据（从 daily_product_stats 表）
+            const visitorsStats = await this.mysqlService.queryOne<{
+              avg_visitors: number | null;
+              stddev_visitors: number | null;
+            }>(
+              `SELECT 
+                AVG(visitors) as avg_visitors,
+                STDDEV_POP(visitors) as stddev_visitors
+              FROM daily_product_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              GROUP BY product_id`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const visitorsAvgValue =
+              visitorsStats && visitorsStats.avg_visitors !== null
+                ? Number(visitorsStats.avg_visitors) || 0
+                : 0;
+            const visitorsStdValue =
+              visitorsStats && visitorsStats.stddev_visitors !== null
+                ? Number(visitorsStats.stddev_visitors) || 0
+                : 0;
+
+            visitorsAvg.push(visitorsAvgValue);
+            visitorsStd.push(visitorsStdValue);
+
+            // 查询广告花费统计数据（从 ad_stats 表）
+            const adCostStats = await this.mysqlService.queryOne<{
+              avg_spend: number | null;
+              stddev_spend: number | null;
+            }>(
+              `SELECT 
+                AVG(spend) as avg_spend,
+                STDDEV_POP(spend) as stddev_spend
+              FROM ad_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              GROUP BY product_id`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const adCostAvgValue =
+              adCostStats && adCostStats.avg_spend !== null
+                ? Number(adCostStats.avg_spend) || 0
+                : 0;
+            const adCostStdValue =
+              adCostStats && adCostStats.stddev_spend !== null
+                ? Number(adCostStats.stddev_spend) || 0
+                : 0;
+
+            adCostAvg.push(adCostAvgValue);
+            adCostStd.push(adCostStdValue);
+
+            // 查询销售额原始数据（从 daily_product_stats 表的 confirmed_sales 字段）
+            const salesData = await this.mysqlService.query<{
+              confirmed_sales: number | null;
+            }>(
+              `SELECT confirmed_sales
+              FROM daily_product_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            // 使用 JavaScript 计算平均值和标准差
+            const salesValues = salesData
+              .map((row) => row.confirmed_sales)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let salesAvgValue = 0;
+            let salesStdValue = 0;
+
+            if (salesValues.length > 0) {
+              // 计算平均值
+              const sum = salesValues.reduce((acc, val) => acc + val, 0);
+              salesAvgValue = sum / salesValues.length;
+
+              // 计算标准差
+              if (salesValues.length > 1) {
+                const variance =
+                  salesValues.reduce(
+                    (acc, val) => acc + Math.pow(val - salesAvgValue, 2),
+                    0,
+                  ) / salesValues.length;
+                salesStdValue = Math.sqrt(variance);
+              } else {
+                salesStdValue = 0;
+              }
+            }
+
+            salesAvg.push(salesAvgValue);
+            salesStd.push(salesStdValue);
+
+            console.log(
+              `    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}, std=${visitorsStdValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}, std=${adCostStdValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)}, std=${salesStdValue.toFixed(2)})`,
+            );
+          } catch (error) {
+            console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
+            // 发生错误时，设置为0
+            visitorsAvg.push(0);
+            visitorsStd.push(0);
+            adCostAvg.push(0);
+            adCostStd.push(0);
+            salesAvg.push(0);
+            salesStd.push(0);
+          }
+        }
+
+        // 3. 计算预警等级
+        const warningLevel = this.calculateWarningLevel(
+          visitorsAvg,
+          visitorsStd,
+          adCostAvg,
+          adCostStd,
+          salesAvg,
+          salesStd,
+        );
+
+        console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
+
+        return {
+          id: product_id,
+          name: product_name,
+          image: product_image,
+          visitorsAvg,
+          visitorsStd,
+          adCostAvg,
+          adCostStd,
+          salesAvg,
+          salesStd,
+          warningLevel,
+        };
+      }),
+    );
+
+    console.log('\n=== getFinishedLinkMonitorData 函数执行完成 ===');
+    console.log(`总共处理了 ${result.length} 个商品`);
+    console.log('==========================================\n');
+
+    return result;
+  }
+
+  /**
+   * 计算预警等级
+   * @param visitorsAvg 访客数平均值数组 [30日, 15日, 7日, 3日, 1日]
+   * @param visitorsStd 访客数标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * @param adCostAvg 广告花费平均值数组 [30日, 15日, 7日, 3日, 1日]
+   * @param adCostStd 广告花费标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * @param salesAvg 销售额平均值数组 [30日, 15日, 7日, 3日, 1日]
+   * @param salesStd 销售额标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * @returns 预警等级
+   */
+  private calculateWarningLevel(
+    visitorsAvg: number[],
+    visitorsStd: number[],
+    adCostAvg: number[],
+    adCostStd: number[],
+    salesAvg: number[],
+    salesStd: number[],
+  ): '严重' | '一般' | '轻微' | '正常' {
+    // 获取最近的时间维度（1日和3日）的索引
+    // 数组顺序：[30日, 15日, 7日, 3日, 1日]
+    // 索引：    [0,    1,    2,   3,   4]
+    const index1Day = 4; // 1日的索引
+    const index3Day = 3; // 3日的索引
+
+    // 计算1日和3日的变异系数（CV = 标准差/平均值）
+    const calculateCV = (avg: number, std: number): number => {
+      if (avg === 0 || avg < 0.001) {
+        return std > 0.001 ? 1.0 : 0; // 如果平均值为0但标准差不为0，返回1.0
+      }
+      return std / avg;
+    };
+
+    // 1日的变异系数
+    const cvVisitors1Day = calculateCV(
+      visitorsAvg[index1Day],
+      visitorsStd[index1Day],
+    );
+    const cvAdCost1Day = calculateCV(
+      adCostAvg[index1Day],
+      adCostStd[index1Day],
+    );
+    const cvSales1Day = calculateCV(salesAvg[index1Day], salesStd[index1Day]);
+
+    // 3日的变异系数
+    const cvVisitors3Day = calculateCV(
+      visitorsAvg[index3Day],
+      visitorsStd[index3Day],
+    );
+    const cvAdCost3Day = calculateCV(
+      adCostAvg[index3Day],
+      adCostStd[index3Day],
+    );
+    const cvSales3Day = calculateCV(salesAvg[index3Day], salesStd[index3Day]);
+
+    // 计算加权分数
+    const score1Day =
+      cvVisitors1Day * METRIC_WEIGHTS.visitors +
+      cvAdCost1Day * METRIC_WEIGHTS.adCost +
+      cvSales1Day * METRIC_WEIGHTS.sales;
+
+    const score3Day =
+      cvVisitors3Day * METRIC_WEIGHTS.visitors +
+      cvAdCost3Day * METRIC_WEIGHTS.adCost +
+      cvSales3Day * METRIC_WEIGHTS.sales;
+
+    // 计算综合预警分数（1日权重0.6，3日权重0.4）
+    const compositeScore = score1Day * 0.6 + score3Day * 0.4;
+
+    // 根据综合分数判断预警等级
+    if (compositeScore >= WARNING_LEVEL_THRESHOLDS.严重) {
+      return '严重';
+    } else if (compositeScore >= WARNING_LEVEL_THRESHOLDS.一般) {
+      return '一般';
+    } else if (compositeScore >= WARNING_LEVEL_THRESHOLDS.轻微) {
+      return '轻微';
+    } else {
+      return '正常';
+    }
+  }
+}

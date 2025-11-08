@@ -674,119 +674,27 @@ export class UploadService {
       return -1;
     };
 
-    const productIdIndex = getIndex([
-      'product_id',
-      '产品id',
-      '商品id',
-      '商品编号',
-    ]);
-    const productNameIndex = getIndex(['product_name', '产品名称', '商品名称']);
-    const currentItemStatusIndex = getIndex([
-      'current_item_status',
-      'current_status',
-      '商品状态',
-      '当前状态',
-      '状态',
-    ]);
-    const visitorsIndex = getIndex([
-      'visitors',
-      '访客数',
-      '访问人数',
-      '商品访客数量',
-    ]);
-    const pageviewsIndex = getIndex([
-      'pageviews',
-      'page_views',
-      '浏览量',
-      '页面访问量',
-      '页面浏览量',
-    ]);
-    const bounceVisitorsIndex = getIndex([
-      'bounce_visitors',
-      '跳出访客数',
-      '跳出人数',
-    ]);
-    const bounceRateIndex = getIndex(['bounce_rate', '跳出率']);
-    const searchClickersIndex = getIndex([
-      'search_clickers',
-      'search_clicks',
-      '搜索点击人数',
-      '搜索点击数',
-      '搜索点击',
-    ]);
-    const likesIndex = getIndex(['likes', '点赞数', '喜欢数', '赞']);
-    const cartVisitorsIndex = getIndex([
-      'cart_visitors',
-      'add_to_cart_visitors',
-      '加购访客数',
-      '加购人数',
-    ]);
-    const cartItemsIndex = getIndex([
-      'cart_items',
-      'add_to_cart_units',
-      '加购件数',
-      '加购数量',
-    ]);
-    const cartConversionIndex = getIndex([
-      'cart_conversion',
-      'cart_conversion_rate',
-      '加购转化率',
-      '购物车转化率',
-    ]);
-    const orderedBuyersIndex = getIndex([
-      'ordered_buyers',
-      'order_buyers',
-      '下单买家数',
-      '下单人数',
-    ]);
-    const orderedItemsIndex = getIndex([
-      'ordered_items',
-      'order_units',
-      '下单件数',
-      '下单数量',
-    ]);
-    const orderedSalesIndex = getIndex([
-      'ordered_sales',
-      'order_sales',
-      '下单金额',
-      '订单金额',
-      '下单销售额',
-    ]);
-    const orderedConversionIndex = getIndex([
-      'ordered_conversion',
-      'order_conversion_rate',
-      '下单转化率',
-      '订单转化率',
-    ]);
-    const confirmedBuyersIndex = getIndex([
-      'confirmed_buyers',
-      '确认收货买家数',
-      '确认收货人数',
-      '确认订单买家数',
-    ]);
-    const confirmedItemsIndex = getIndex([
-      'confirmed_items',
-      'confirmed_units',
-      '确认收货件数',
-      '确认收货数量',
-      '确认订单件数',
-    ]);
-    const confirmedSalesIndex = getIndex([
-      'confirmed_sales',
-      '确认收货金额',
-      '确认订单销售额',
-    ]);
-    const confirmedConversionIndex = getIndex([
-      'confirmed_conversion',
-      'confirmed_conversion_rate',
-      '确认收货转化率',
-      '确认订单转化率',
-    ]);
-    const finalConversionIndex = getIndex([
-      'final_conversion',
-      'final conversion',
-      '最终转化率',
-    ]);
+    const productIdIndex = getIndex(['商品编号']);
+    const productNameIndex = getIndex(['商品']);
+    const currentItemStatusIndex = getIndex(['Current Item Status']);
+    const visitorsIndex = getIndex(['商品访客数量']);
+    const pageviewsIndex = getIndex(['商品页面访问量']);
+    const bounceVisitorsIndex = getIndex(['跳出商品页面的访客数']);
+    const bounceRateIndex = getIndex(['商品跳出率']);
+    const searchClickersIndex = getIndex(['搜索点击人数']);
+    const likesIndex = getIndex(['赞']);
+    const cartVisitorsIndex = getIndex(['商品访客数 (加入购物车)']);
+    const cartItemsIndex = getIndex(['件数 (加入购物车）']);
+    const cartConversionIndex = getIndex(['转化率 (加入购物车率)']);
+    const orderedBuyersIndex = getIndex(['买家数（已下订单）']);
+    const orderedItemsIndex = getIndex(['件数（已下订单）']);
+    const orderedSalesIndex = getIndex(['销售额（已下订单） (THB)']);
+    const orderedConversionIndex = getIndex(['转化率（已下订单）']);
+    const confirmedBuyersIndex = getIndex(['买家数（已确定订单）']);
+    const confirmedItemsIndex = getIndex(['件数（已确定订单）']);
+    const confirmedSalesIndex = getIndex(['销售额（已确定订单） (THB)']);
+    const confirmedConversionIndex = getIndex(['转化率（已确定订单）']);
+    const finalConversionIndex = getIndex(['转化率 (将确定)']);
 
     // 必需字段验证
     if (productIdIndex === -1) {

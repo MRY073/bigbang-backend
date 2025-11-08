@@ -144,21 +144,21 @@ export class ProductsController {
 
   /**
    * 30天广告占比趋势
-   * GET /products/ad-trend?shop=商店ID
+   * GET /products/ad-trend?shopID=店铺ID
    */
   @Get('ad-trend')
   async getAdTrend(@Query() query: AdTrendDto, @Res() res: Response) {
-    const { shop } = query;
+    const { shopID } = query;
 
-    if (!shop) {
+    if (!shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: 'shop 参数不能为空',
+        message: 'shopID 参数不能为空',
       });
     }
 
     try {
-      const data = await this.productsService.getAdTrend30Days(shop);
+      const data = await this.productsService.getAdTrend30Days(shopID);
 
       return res.status(HttpStatus.OK).json({
         success: true,
@@ -176,16 +176,16 @@ export class ProductsController {
 
   /**
    * 指定日期广告占比
-   * GET /products/ad-ratio?shop=商店ID&date=日期
+   * GET /products/ad-ratio?shopID=店铺ID&date=日期
    */
   @Get('ad-ratio')
   async getAdRatio(@Query() query: AdRatioDto, @Res() res: Response) {
-    const { shop, date } = query;
+    const { shopID, date } = query;
 
-    if (!shop) {
+    if (!shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: 'shop 参数不能为空',
+        message: 'shopID 参数不能为空',
       });
     }
 
@@ -197,7 +197,7 @@ export class ProductsController {
     }
 
     try {
-      const data = await this.productsService.getAdRatioByDate(shop, date);
+      const data = await this.productsService.getAdRatioByDate(shopID, date);
 
       return res.status(HttpStatus.OK).json({
         success: true,
