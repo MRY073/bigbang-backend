@@ -60,7 +60,7 @@ export class UploadService {
     if (type === 'ad') {
       // 处理广告数据类型的上传
       console.log('处理广告数据类型的上传-ad');
-      return await this.handleAdUpload(files, shopName);
+      return await this.handleAdUpload(files, shopName, shopID);
     }
 
     console.log('其他类型的处理-default');
@@ -1130,10 +1130,12 @@ export class UploadService {
   async handleAdUpload(
     files: Express.Multer.File[],
     shopName: string,
+    shopID: string,
   ): Promise<any[]> {
     console.log('=== handleAdUpload 函数开始执行 ===');
     console.log('接收到的文件数量:', files?.length || 0);
     console.log('店铺名称:', shopName);
+    console.log('店铺ID:', shopID);
     console.log('文件列表:', files?.map((f) => f.originalname) || []);
 
     // 第一步：验证所有文件名格式（在所有逻辑之前）
@@ -1184,6 +1186,7 @@ export class UploadService {
         const result = await this.uploadAdStats(
           file,
           shopName,
+          shopID,
           validation.date!,
         );
 
@@ -1219,6 +1222,7 @@ export class UploadService {
   private parseAdStatsCSV(
     content: string,
     shopName: string,
+    shopID: string,
     date: string,
   ): Array<Record<string, any>> {
     // 不过滤空行，保持行号对应关系
@@ -1337,7 +1341,8 @@ export class UploadService {
         direct_roas: parseNumber(getValue(directRoasIndex)),
         ad_sales_cost: parseNumber(getValue(adSalesCostIndex)),
         direct_ad_sales_cost: parseNumber(getValue(directAdSalesCostIndex)),
-        shop: shopName,
+        shop_name: shopName,
+        shop_id: shopID,
         date,
       };
 
@@ -1359,6 +1364,7 @@ export class UploadService {
   async uploadAdStats(
     file: Express.Multer.File,
     shopName: string,
+    shopID: string,
     date: string,
   ): Promise<{ insertedCount: number; message: string }> {
     console.log('已经进入 uploadAdStats 函数');
@@ -1367,20 +1373,26 @@ export class UploadService {
 
     // 解析 CSV 文件
     const fileContent = file.buffer.toString('utf-8');
-    const data = this.parseAdStatsCSV(fileContent, shopName, date);
+    const data = this.parseAdStatsCSV(fileContent, shopName, shopID, date);
 
     if (data.length === 0) {
       throw new Error('文件中没有有效数据');
     }
 
     console.log(`解析到 ${data.length} 条广告数据`);
+    // 调试：检查第一条数据是否包含 shop_name 和 shop_id
+    if (data.length > 0) {
+      console.log('第一条数据示例:', JSON.stringify(data[0], null, 2));
+      console.log('shop_name:', data[0].shop_name);
+      console.log('shop_id:', data[0].shop_id);
+    }
 
     // 使用事务处理删除和插入
     const result = await this.mysqlService.transaction(async (connection) => {
-      // 1. 查询是否存在相同 shop 和 date 的数据
+      // 1. 查询是否存在相同 shop_id 和 date 的数据
       const [existingRows] = await connection.query(
-        'SELECT COUNT(*) as count FROM ad_stats WHERE shop = ? AND date = ?',
-        [shopName, date],
+        'SELECT COUNT(*) as count FROM ad_stats WHERE shop_id = ? AND date = ?',
+        [shopID, date],
       );
 
       // 2. 如果存在，删除旧数据
@@ -1389,11 +1401,11 @@ export class UploadService {
         const count = existing[0]?.count || 0;
         if (count > 0) {
           console.log(
-            `删除 ${count} 条旧数据 (shop: ${shopName}, date: ${date})`,
+            `删除 ${count} 条旧数据 (shop_id: ${shopID}, date: ${date})`,
           );
           await connection.execute(
-            'DELETE FROM ad_stats WHERE shop = ? AND date = ?',
-            [shopName, date],
+            'DELETE FROM ad_stats WHERE shop_id = ? AND date = ?',
+            [shopID, date],
           );
         }
       }
@@ -1432,7 +1444,8 @@ export class UploadService {
         'direct_roas',
         'ad_sales_cost',
         'direct_ad_sales_cost',
-        'shop',
+        'shop_name',
+        'shop_id',
         'date',
       ];
 
@@ -1443,14 +1456,31 @@ export class UploadService {
       const valuePlaceholders = data.map(() => `(${placeholders})`).join(', ');
 
       // 收集所有值
-      data.forEach((item) => {
+      data.forEach((item, itemIndex) => {
         columns.forEach((col) => {
           const value: unknown = item[col];
+          // 调试：检查 shop_name 和 shop_id 的值
+          if (col === 'shop_name' || col === 'shop_id') {
+            console.log(
+              `数据项 ${itemIndex}, 列 ${col}: ${String(value)} (类型: ${typeof value})`,
+            );
+          }
           values.push(value !== undefined && value !== null ? value : null);
         });
       });
 
+      // 调试：检查 values 数组中 shop_name 和 shop_id 的位置
+      const shopNameIndex = columns.indexOf('shop_name');
+      const shopIdIndex = columns.indexOf('shop_id');
+      if (shopNameIndex !== -1 && shopIdIndex !== -1 && data.length > 0) {
+        console.log(
+          `第一条数据的 shop_name 值: ${values[shopNameIndex]}, shop_id 值: ${values[shopIdIndex]}`,
+        );
+      }
+
       const insertSql = `INSERT INTO ad_stats (${columns.join(', ')}) VALUES ${valuePlaceholders}`;
+      console.log('插入 SQL:', insertSql.substring(0, 200) + '...');
+      console.log('参数数量:', values.length, '数据条数:', data.length);
       const [insertResult] = await connection.execute(insertSql, values);
       const insertResultTyped = insertResult as {
         affectedRows: number;

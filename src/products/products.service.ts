@@ -209,6 +209,7 @@ export class ProductsService {
       product_id: string;
       product_name: string;
       product_image: string | null;
+      testing_stage_start: string; // 测款开始日期（ISO 8601 格式）
       total_clicks: number; // 测款开始以来的点击数合计
       total_visitors: number; // 测款开始以来的访客数合计
       total_orders: number; // 测款开始以来的出单数合计
@@ -261,7 +262,7 @@ export class ProductsService {
           `  ${index + 1}. product_id: ${p.product_id}, product_name: ${p.product_name}`,
         );
         console.log(
-          `     测款开始时间: ${p.testing_stage_start}, 测款结束时间: ${p.testing_stage_end || '未设置'}`,
+          `     测款开始时间: ${String(p.testing_stage_start)}, 测款结束时间: ${p.testing_stage_end ? String(p.testing_stage_end) : '未设置'}`,
         );
       });
     }
@@ -419,6 +420,7 @@ export class ProductsService {
           product_id,
           product_name,
           product_image,
+          testing_stage_start: startDate.toISOString(),
           total_clicks: totalClicks,
           total_visitors: totalVisitors,
           total_orders: totalOrders,

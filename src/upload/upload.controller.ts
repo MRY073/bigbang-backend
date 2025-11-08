@@ -18,7 +18,7 @@ export class UploadController {
 
   @Post()
   @UseInterceptors(
-    FilesInterceptor('files', 10), // 支持多文件上传，最多10个文件（可根据需要调整）
+    FilesInterceptor('files', 100), // 支持多文件上传，最多100个文件（可根据需要调整）
   )
   async upload(
     @UploadedFiles() files: Express.Multer.File[],
