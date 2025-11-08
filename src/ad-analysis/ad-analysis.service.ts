@@ -446,4 +446,242 @@ export class AdAnalysisService {
       stages: stageData,
     };
   }
+
+  /**
+   * 获取指定日期、指定阶段、指定店铺的商品列表
+   * 只返回有广告花费的商品
+   * @param shopID 店铺ID
+   * @param date 日期（YYYY-MM-DD 格式）
+   * @param stage 阶段标识：product_stage, testing_stage, potential_stage, abandoned_stage, no_stage
+   * @param shopName 店铺名称（可选，用于日志记录）
+   * @returns 商品列表，包含商品ID、标题、主图、广告花费、广告销售额、ROI等信息
+   */
+  async getStageProducts(
+    shopID: string,
+    date: string,
+    stage: string,
+    shopName?: string,
+  ): Promise<
+    Array<{
+      product_id: string;
+      title: string;
+      main_image: string;
+      ad_spend: number;
+      ad_sales: number;
+      roi: number;
+    }>
+  > {
+    console.log('=== getStageProducts 函数开始执行 ===');
+    console.log('接收到的店铺ID:', shopID);
+    console.log('接收到的日期:', date);
+    console.log('接收到的阶段:', stage);
+    if (shopName) {
+      console.log('接收到的店铺名称:', shopName);
+    }
+
+    // 验证日期格式
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
+    }
+
+    const targetDate = new Date(date);
+    if (isNaN(targetDate.getTime())) {
+      throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
+    }
+
+    const dateStr = targetDate.toISOString().split('T')[0];
+    console.log('解析后的日期:', dateStr);
+
+    // 验证阶段参数
+    const validStages = [
+      'product_stage',
+      'testing_stage',
+      'potential_stage',
+      'abandoned_stage',
+      'no_stage',
+    ];
+    if (!validStages.includes(stage)) {
+      throw new Error(
+        `阶段参数无效：${stage}，应为 product_stage, testing_stage, potential_stage, abandoned_stage, no_stage 之一`,
+      );
+    }
+
+    // 1. 查询指定日期、指定店铺的广告数据（只查询有花费的数据）
+    console.log('\n--- 第一步：查询指定日期的广告数据 ---');
+    const adStats = await this.mysqlService.query<{
+      product_id: string;
+      spend: number | null;
+      sales_amount: number | null;
+    }>(
+      `SELECT 
+        product_id,
+        COALESCE(spend, 0) as spend,
+        COALESCE(sales_amount, 0) as sales_amount
+      FROM ad_stats
+      WHERE shop_id = ? AND date = ? AND COALESCE(spend, 0) > 0
+      ORDER BY product_id ASC`,
+      [shopID, dateStr],
+    );
+
+    console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
+
+    if (!adStats || adStats.length === 0) {
+      console.log('⚠️ 未找到广告数据，返回空数组');
+      console.log('=== getStageProducts 函数执行完成（无数据）===\n');
+      return [];
+    }
+
+    // 2. 对每条广告数据，判断商品阶段并筛选出符合指定阶段的商品
+    console.log('\n--- 第二步：判断商品阶段并筛选符合条件的商品 ---');
+    console.log(`开始处理 ${adStats.length} 条广告数据`);
+
+    const stageMap = new Map<
+      string,
+      {
+        product_id: string;
+        ad_spend: number;
+        ad_sales: number;
+      }
+    >();
+
+    // 阶段映射：将接口参数映射到内部阶段标识
+    const stageMapping: Record<
+      string,
+      'testing' | 'potential' | 'product' | 'abandoned' | null
+    > = {
+      testing_stage: 'testing',
+      potential_stage: 'potential',
+      product_stage: 'product',
+      abandoned_stage: 'abandoned',
+      no_stage: null,
+    };
+
+    const targetStage = stageMapping[stage];
+
+    for (const ad of adStats) {
+      const spend = Number(ad.spend) || 0;
+      const sales = Number(ad.sales_amount) || 0;
+
+      if (spend <= 0) continue; // 跳过花费为0的数据（理论上不应该出现，因为SQL已过滤）
+
+      const productStage = await this.getProductStageByDate(
+        ad.product_id,
+        shopID,
+        targetDate,
+      );
+
+      // 判断是否符合指定阶段
+      if (stage === 'no_stage') {
+        // no_stage：商品没有阶段（返回 null）
+        if (productStage !== null) {
+          continue; // 不符合条件，跳过
+        }
+      } else {
+        // 其他阶段：商品阶段必须匹配
+        if (productStage !== targetStage) {
+          continue; // 不符合条件，跳过
+        }
+      }
+
+      // 累加同一商品的花费和销售额（如果同一天有多个广告记录）
+      const existing = stageMap.get(ad.product_id);
+      if (existing) {
+        existing.ad_spend += spend;
+        existing.ad_sales += sales;
+      } else {
+        stageMap.set(ad.product_id, {
+          product_id: ad.product_id,
+          ad_spend: spend,
+          ad_sales: sales,
+        });
+      }
+    }
+
+    console.log(`筛选后符合条件的商品数量: ${stageMap.size}`);
+
+    if (stageMap.size === 0) {
+      console.log('⚠️ 未找到符合条件的商品，返回空数组');
+      console.log('=== getStageProducts 函数执行完成（无数据）===\n');
+      return [];
+    }
+
+    // 3. 查询商品基本信息（product_id, product_name, product_image）
+    console.log('\n--- 第三步：查询商品基本信息 ---');
+    const productIds = Array.from(stageMap.keys());
+    console.log(`需要查询的商品ID数量: ${productIds.length}`);
+
+    const products = await this.mysqlService.query<{
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+    }>(
+      `SELECT 
+        product_id,
+        product_name,
+        product_image
+      FROM product_items
+      WHERE shop_id = ? AND product_id IN (${productIds.map(() => '?').join(',')})
+      ORDER BY product_id ASC`,
+      [shopID, ...productIds],
+    );
+
+    console.log(`查询到的商品信息条数: ${products?.length || 0}`);
+
+    // 4. 合并数据并计算 ROI
+    console.log('\n--- 第四步：合并数据并计算 ROI ---');
+    const result: Array<{
+      product_id: string;
+      title: string;
+      main_image: string;
+      ad_spend: number;
+      ad_sales: number;
+      roi: number;
+    }> = [];
+
+    for (const product of products || []) {
+      const adData = stageMap.get(product.product_id);
+      if (!adData) {
+        continue; // 理论上不应该出现，但为了安全起见跳过
+      }
+
+      // 计算 ROI：ROI = 广告销售额 / 广告花费
+      let roi = 0;
+      if (adData.ad_spend > 0) {
+        roi = adData.ad_sales / adData.ad_spend;
+      }
+
+      // 保留2位小数
+      const adSpend = Math.round(adData.ad_spend * 100) / 100;
+      const adSales = Math.round(adData.ad_sales * 100) / 100;
+      roi = Math.round(roi * 100) / 100;
+
+      result.push({
+        product_id: product.product_id,
+        title: product.product_name || '',
+        main_image: product.product_image || '',
+        ad_spend: adSpend,
+        ad_sales: adSales,
+        roi: roi,
+      });
+    }
+
+    // 5. 按广告花费降序排列
+    result.sort((a, b) => b.ad_spend - a.ad_spend);
+
+    console.log(`最终返回商品数量: ${result.length}`);
+    if (result.length > 0) {
+      console.log('前3个商品示例:');
+      result.slice(0, 3).forEach((item) => {
+        console.log(
+          `  ${item.product_id}: ${item.title}, 花费=${item.ad_spend}, 销售额=${item.ad_sales}, ROI=${item.roi}`,
+        );
+      });
+    }
+
+    console.log('\n=== getStageProducts 函数执行完成 ===');
+    console.log('==========================================\n');
+
+    return result;
+  }
 }
