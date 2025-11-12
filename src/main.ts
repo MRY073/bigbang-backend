@@ -10,9 +10,10 @@ async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
   if (isProduction) {
     app.setGlobalPrefix('api');
+    await app.listen(80);
+  } else {
+    await app.listen(3000);
   }
-
-  await app.listen(3000);
 }
 bootstrap().catch((error) => {
   console.error('应用启动失败:', error);
