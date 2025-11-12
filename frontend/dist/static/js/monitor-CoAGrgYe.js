@@ -1,0 +1,1 @@
+import{fG as i}from"./index-CxNmyPEM.js";const e=t=>i.request("get","/api/finished/link/monitor/list",{params:t}),o=t=>i.request("get","/api/finished/link/monitor/ai-suggestion",{params:t}),s=t=>i.request("get","/api/potential/link/monitor/list",{params:t}),r=t=>i.request("get","/api/potential/link/monitor/ai-suggestion",{params:t});export{o as a,s as b,r as c,e as g};

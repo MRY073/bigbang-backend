@@ -1,0 +1,1 @@
+import{fG as e}from"./index-CxNmyPEM.js";const u=t=>e.request("get","/api/product-items",{params:t}),o=(t,r)=>e.request("put",`/api/product-items/${t}`,{data:r}),p=t=>e.request("delete",`/api/product-items/${t}`),a=t=>e.request("get","/api/product-items/custom-categories",{params:t});export{a,p as d,u as g,o as u};
