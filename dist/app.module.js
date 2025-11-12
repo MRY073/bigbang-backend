@@ -16,6 +16,8 @@ const upload_module_1 = require("./upload/upload.module");
 const products_module_1 = require("./products/products.module");
 const ad_analysis_module_1 = require("./ad-analysis/ad-analysis.module");
 const database_module_1 = require("./database/database.module");
+const serve_static_1 = require("@nestjs/serve-static");
+const path_1 = require("path");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -31,6 +33,20 @@ exports.AppModule = AppModule = __decorate([
                 database: 'bigbangShopee',
                 autoLoadEntities: true,
                 synchronize: true,
+            }),
+            serve_static_1.ServeStaticModule.forRoot({
+                rootPath: (0, path_1.join)(__dirname, '..', 'frontend', 'dist'),
+                exclude: [
+                    '/api/:path*',
+                    '/auth/:path*',
+                    '/products/:path*',
+                    '/upload/:path*',
+                    '/ad-analysis/:path*',
+                ],
+                renderPath: /^(?!\/api|\/auth|\/products|\/upload|\/ad-analysis).*/,
+                serveStaticOptions: {
+                    index: 'index.html',
+                },
             }),
             database_module_1.DatabaseModule,
             auth_module_1.AuthModule,

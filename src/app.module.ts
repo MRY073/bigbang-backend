@@ -8,6 +8,8 @@ import { ProductsModule } from './products/products.module';
 import { AdAnalysisModule } from './ad-analysis/ad-analysis.module';
 // import { StatsModule } from './stats/stats.module';
 import { DatabaseModule } from './database/database.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 @Module({
   imports: [
@@ -20,6 +22,20 @@ import { DatabaseModule } from './database/database.module';
       database: 'bigbangShopee',
       autoLoadEntities: true,
       synchronize: true, // 开发阶段自动创建表
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'frontend', 'dist'),
+      exclude: [
+        '/api/:path*',
+        '/auth/:path*',
+        '/products/:path*',
+        '/upload/:path*',
+        '/ad-analysis/:path*',
+      ],
+      renderPath: /^(?!\/api|\/auth|\/products|\/upload|\/ad-analysis).*/,
+      serveStaticOptions: {
+        index: 'index.html',
+      },
     }),
     DatabaseModule, // MySQL 数据库操作模块
     AuthModule,
