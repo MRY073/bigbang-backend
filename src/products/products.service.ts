@@ -27,6 +27,22 @@ const METRIC_WEIGHTS = {
   adCost: 0.3, // 广告花费指标权重
   sales: 0.3, // 销售额指标权重
 };
+
+// ==================== 潜力链接监控预警等级阈值配置 ====================
+// 标准差系数阈值（标准差相对于平均值的比例）
+const WARNING_LEVEL_THRESHOLDS = {
+  严重: 0.5, // 标准差/平均值 >= 0.5 时，判定为"严重"
+  一般: 0.3, // 标准差/平均值 >= 0.3 且 < 0.5 时，判定为"一般"
+  轻微: 0.15, // 标准差/平均值 >= 0.15 且 < 0.3 时，判定为"轻微"
+  正常: 0.0, // 标准差/平均值 < 0.15 时，判定为"正常"
+};
+
+// 需要评估的指标权重（可根据业务需求调整）
+const METRIC_WEIGHTS_POTENTIAL = {
+  visitors: 0.4, // 访客指标权重
+  adCost: 0.3, // 广告花费指标权重
+  sales: 0.3, // 销售额指标权重
+};
 // =========================================================
 
 @Injectable()
@@ -750,17 +766,57 @@ export class ProductsService {
 
 
   /**
+   * 获取店铺自定义分类集合
+   * @param shopID 店铺ID
+   * @returns 去重排序后的自定义分类数组
+   */
+  async getCustomCategories(shopID: string): Promise<string[]> {
+    const rawCategories = await this.mysqlService.query<{
+      category: string | null;
+    }>(
+      `SELECT DISTINCT category FROM (
+        SELECT TRIM(custom_category_1) AS category FROM product_items WHERE shop_id = ?
+        UNION ALL
+        SELECT TRIM(custom_category_2) FROM product_items WHERE shop_id = ?
+        UNION ALL
+        SELECT TRIM(custom_category_3) FROM product_items WHERE shop_id = ?
+        UNION ALL
+        SELECT TRIM(custom_category_4) FROM product_items WHERE shop_id = ?
+      ) AS categories
+      WHERE category IS NOT NULL AND category <> ''`,
+      [shopID, shopID, shopID, shopID],
+    );
+
+    const categoriesSet = new Set<string>();
+    for (const item of rawCategories) {
+      const value = item.category?.trim();
+      if (value) {
+        categoriesSet.add(value);
+      }
+    }
+
+    const collator = new Intl.Collator('zh-Hans-u-co-pinyin', {
+      sensitivity: 'base',
+      numeric: true,
+    });
+
+    return Array.from(categoriesSet).sort((a, b) => collator.compare(a, b));
+  }
+
+  /**
    * 成品链接监控
    * 获取成品阶段商品的监控数据，包括访客、广告花费、销售额等指标的变化趋势和预警信息
    * @param shopID 店铺ID
    * @param shopName 店铺名称
    * @param date 日期（YYYY-MM-DD 格式，可选，默认为当前日期）
+   * @param customCategory 自定义分类筛选（可选）
    * @returns 成品链接监控数据列表
    */
   async getFinishedLinkMonitorData(
     shopID: string,
     shopName: string,
     date?: string,
+    customCategory?: string,
   ): Promise<
     Array<{
       id: string;
@@ -789,12 +845,17 @@ export class ProductsService {
       }>;
       warningLevel: '严重' | '一般' | '轻微' | '正常';
       warningMessages: string[];
+      custom_category_1?: string | null;
+      custom_category_2?: string | null;
+      custom_category_3?: string | null;
+      custom_category_4?: string | null;
     }>
   > {
     console.log('=== getFinishedLinkMonitorData 函数开始执行 ===');
     console.log('接收到的店铺ID:', shopID);
     console.log('接收到的店铺名称:', shopName);
     console.log('接收到的日期参数:', date || '未提供（使用当前日期）');
+    console.log('接收到的自定义分类参数:', customCategory || '未提供');
 
     // 使用传入的日期参数，如果未提供则使用当前日期
     let currentDate: Date;
@@ -809,22 +870,51 @@ export class ProductsService {
 
     // 1. 查询当前处于成品阶段的商品
     console.log('\n--- 第一步：查询当前处于成品阶段的商品 ---');
+    
+    // 构建 WHERE 子句
+    let whereClause = `WHERE shop_id = ? 
+        AND product_stage_start IS NOT NULL
+        AND product_stage_start <= ?
+        AND (product_stage_end IS NULL OR product_stage_end >= ?)`;
+    
+    const queryParams: any[] = [shopID, currentDate, currentDate];
+    
+    // 如果提供了 customCategory 参数，添加筛选条件
+    if (customCategory && customCategory.trim()) {
+      const trimmedCategory = customCategory.trim();
+      // 使用 LOWER() 函数实现不区分大小写的匹配，排除 NULL 值
+      whereClause += ` AND (
+        (custom_category_1 IS NOT NULL AND LOWER(custom_category_1) LIKE ?) OR
+        (custom_category_2 IS NOT NULL AND LOWER(custom_category_2) LIKE ?) OR
+        (custom_category_3 IS NOT NULL AND LOWER(custom_category_3) LIKE ?) OR
+        (custom_category_4 IS NOT NULL AND LOWER(custom_category_4) LIKE ?)
+      )`;
+      const categoryPattern = `%${trimmedCategory.toLowerCase()}%`;
+      queryParams.push(categoryPattern, categoryPattern, categoryPattern, categoryPattern);
+      console.log('应用自定义分类筛选:', trimmedCategory);
+    }
+    
     const finishedProducts = await this.mysqlService.query<{
       product_id: string;
       product_name: string;
       product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
     }>(
       `SELECT 
         product_id,
         product_name,
-        product_image
+        product_image,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4
       FROM product_items 
-      WHERE shop_id = ? 
-        AND product_stage_start IS NOT NULL
-        AND product_stage_start <= ?
-        AND (product_stage_end IS NULL OR product_stage_end >= ?)
+      ${whereClause}
       ORDER BY id ASC`,
-      [shopID, currentDate, currentDate],
+      queryParams,
     );
 
     console.log('查询到的成品商品数量:', finishedProducts?.length || 0);
@@ -843,7 +933,15 @@ export class ProductsService {
 
     const result = await Promise.all(
       finishedProducts.map(async (product) => {
-        const { product_id, product_name, product_image } = product;
+        const {
+          product_id,
+          product_name,
+          product_image,
+          custom_category_1,
+          custom_category_2,
+          custom_category_3,
+          custom_category_4,
+        } = product;
 
         console.log(`\n处理商品: ${product_id} (${product_name})`);
 
@@ -1129,6 +1227,10 @@ export class ProductsService {
           salesVolatilityBaseline,
           warningLevel,
           warningMessages,
+          custom_category_1: custom_category_1 || null,
+          custom_category_2: custom_category_2 || null,
+          custom_category_3: custom_category_3 || null,
+          custom_category_4: custom_category_4 || null,
         };
       }),
     );
@@ -1343,5 +1445,917 @@ export class ProductsService {
     } else {
       return '正常';
     }
+  }
+
+  /**
+   * 潜力链接监控
+   * 获取潜力阶段商品的监控数据，包括访客、广告花费、销售额等指标的变化趋势和预警信息
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param date 日期（YYYY-MM-DD 格式，必需）
+   * @returns 潜力链接监控数据列表
+   */
+  async getPotentialLinkMonitorData(
+    shopID: string,
+    shopName: string,
+    date: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      image?: string | null;
+      visitorsAvg: number[];
+      visitorsVolatilityBaseline: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
+      adCostAvg: number[];
+      adCostVolatilityBaseline: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
+      salesAvg: number[];
+      salesVolatilityBaseline: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
+      warningLevel: '严重' | '一般' | '轻微' | '正常';
+      warningMessages?: string[];
+      custom_category_1?: string | null;
+      custom_category_2?: string | null;
+      custom_category_3?: string | null;
+      custom_category_4?: string | null;
+    }>
+  > {
+    console.log('=== getPotentialLinkMonitorData 函数开始执行 ===');
+    console.log('接收到的店铺ID:', shopID);
+    console.log('接收到的店铺名称:', shopName);
+    console.log('接收到的日期参数:', date);
+
+    // 解析日期字符串（格式：YYYY-MM-DD）
+    const [year, month, day] = date.split('-').map(Number);
+    const currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    console.log('使用的基准日期:', currentDate.toISOString());
+
+    // 1. 查询当前处于潜力阶段的商品
+    console.log('\n--- 第一步：查询当前处于潜力阶段的商品 ---');
+    const potentialProducts = await this.mysqlService.query<{
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+    }>(
+      `SELECT 
+        product_id,
+        product_name,
+        product_image,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4
+      FROM product_items 
+      WHERE shop_id = ? 
+        AND potential_stage_start IS NOT NULL
+        AND potential_stage_start <= ?
+        AND (potential_stage_end IS NULL OR potential_stage_end >= ?)
+      ORDER BY id ASC`,
+      [shopID, currentDate, currentDate],
+    );
+
+    console.log('查询到的潜力商品数量:', potentialProducts?.length || 0);
+
+    if (!potentialProducts || potentialProducts.length === 0) {
+      console.log('⚠️ 未找到潜力阶段的商品，返回空数组');
+      console.log(
+        '=== getPotentialLinkMonitorData 函数执行完成（无数据）===\n',
+      );
+      return [];
+    }
+
+    // 2. 对每个商品计算5个时间维度的统计数据
+    console.log('\n--- 第二步：对每个商品计算统计数据 ---');
+    console.log(`开始处理 ${potentialProducts.length} 个商品的统计数据`);
+
+    const timeDimensions = [30, 15, 7, 3, 1]; // 5个时间维度（天）
+
+    const result = await Promise.all(
+      potentialProducts.map(async (product) => {
+        const {
+          product_id,
+          product_name,
+          product_image,
+          custom_category_1,
+          custom_category_2,
+          custom_category_3,
+          custom_category_4,
+        } = product;
+
+        console.log(`\n处理商品: ${product_id} (${product_name})`);
+
+        // 初始化结果数组
+        const visitorsAvg: number[] = [];
+        const visitorsStd: number[] = [];
+        const adCostAvg: number[] = [];
+        const adCostStd: number[] = [];
+        const salesAvg: number[] = [];
+        const salesStd: number[] = [];
+
+        // 查询60天的完整数据用于计算短期波动相对长期基准指标（长期基准为60天）
+        const endDate60 = new Date(currentDate);
+        const startDate60 = new Date(currentDate);
+        startDate60.setDate(endDate60.getDate() - 59); // 60天数据（包括起始日和结束日）
+        const startDate60Str = startDate60.toISOString().split('T')[0];
+        const endDate60Str = endDate60.toISOString().split('T')[0];
+
+        console.log(
+          `  [${product_id}] 查询60天数据范围: ${startDate60Str} 到 ${endDate60Str}`,
+        );
+
+        // 查询60天的访客数原始数据（保留日期字段以确保数据按日期排序）
+        const visitorsData60 = await this.mysqlService.query<{
+          date: Date | string;
+          visitors: number | null;
+        }>(
+          `SELECT date, visitors
+          FROM daily_product_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date ASC`,
+          [shopID, product_id, startDate60Str, endDate60Str],
+        );
+        // 确保数据按日期排序，并提取数值（处理null和undefined）
+        const visitorsValues60 = visitorsData60
+          .map((row) => ({
+            date: row.date,
+            value:
+              row.visitors !== null && row.visitors !== undefined
+                ? Number(row.visitors) || 0
+                : 0,
+          }))
+          .sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateA - dateB;
+          })
+          .map((item) => item.value);
+
+        console.log(
+          `  [${product_id}] 访客数据: 查询到 ${visitorsData60.length} 条记录，处理后 ${visitorsValues60.length} 个数据点`,
+        );
+
+        // 查询60天的广告花费原始数据（保留日期字段以确保数据按日期排序）
+        const adCostData60 = await this.mysqlService.query<{
+          date: Date | string;
+          spend: number | null;
+        }>(
+          `SELECT date, spend
+          FROM ad_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date ASC`,
+          [shopID, product_id, startDate60Str, endDate60Str],
+        );
+        // 确保数据按日期排序，并提取数值（处理null和undefined）
+        const adCostValues60 = adCostData60
+          .map((row) => ({
+            date: row.date,
+            value:
+              row.spend !== null && row.spend !== undefined
+                ? Number(row.spend) || 0
+                : 0,
+          }))
+          .sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateA - dateB;
+          })
+          .map((item) => item.value);
+
+        console.log(
+          `  [${product_id}] 广告花费数据: 查询到 ${adCostData60.length} 条记录，处理后 ${adCostValues60.length} 个数据点`,
+        );
+
+        // 查询60天的销售额原始数据（保留日期字段以确保数据按日期排序）
+        const salesData60 = await this.mysqlService.query<{
+          date: Date | string;
+          confirmed_sales: number | null;
+        }>(
+          `SELECT date, confirmed_sales
+          FROM daily_product_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date ASC`,
+          [shopID, product_id, startDate60Str, endDate60Str],
+        );
+        // 确保数据按日期排序，并提取数值（处理null和undefined）
+        const salesValues60 = salesData60
+          .map((row) => ({
+            date: row.date,
+            value:
+              row.confirmed_sales !== null && row.confirmed_sales !== undefined
+                ? Number(row.confirmed_sales) || 0
+                : 0,
+          }))
+          .sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateA - dateB;
+          })
+          .map((item) => item.value);
+
+        console.log(
+          `  [${product_id}] 销售额数据: 查询到 ${salesData60.length} 条记录，处理后 ${salesValues60.length} 个数据点`,
+        );
+
+        // 计算短期波动相对长期基准指标（使用60天数据）
+        const visitorsVolatilityBaseline =
+          this.calculateSlidingVolatility(visitorsValues60);
+        const adCostVolatilityBaseline =
+          this.calculateSlidingVolatility(adCostValues60);
+        const salesVolatilityBaseline =
+          this.calculateSlidingVolatility(salesValues60);
+
+        console.log(
+          `  [${product_id}] 波动率基线计算完成: 访客=${visitorsVolatilityBaseline.length}个窗口, 广告花费=${adCostVolatilityBaseline.length}个窗口, 销售额=${salesVolatilityBaseline.length}个窗口`,
+        );
+
+        // 对每个时间维度计算统计数据
+        for (const days of timeDimensions) {
+          const endDate = new Date(currentDate);
+          const startDate = new Date(currentDate);
+          startDate.setDate(endDate.getDate() - (days - 1));
+
+          const startDateStr = startDate.toISOString().split('T')[0];
+          const endDateStr = endDate.toISOString().split('T')[0];
+
+          console.log(
+            `  [${product_id}] 计算 ${days} 天数据 (${startDateStr} 到 ${endDateStr})`,
+          );
+
+          try {
+            // 查询访客数原始数据（从 daily_product_stats 表）
+            const visitorsData = await this.mysqlService.query<{
+              visitors: number | null;
+            }>(
+              `SELECT visitors
+              FROM daily_product_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const visitorsValues = visitorsData
+              .map((row) => row.visitors)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let visitorsAvgValue = 0;
+            let visitorsStdValue = 0;
+            if (visitorsValues.length > 0) {
+              const sum = visitorsValues.reduce((acc, val) => acc + val, 0);
+              visitorsAvgValue = sum / visitorsValues.length;
+              if (visitorsValues.length > 1) {
+                const mean = visitorsAvgValue;
+                const variance =
+                  visitorsValues.reduce(
+                    (acc, val) => acc + Math.pow(val - mean, 2),
+                    0,
+                  ) / (visitorsValues.length - 1);
+                visitorsStdValue = Math.sqrt(variance);
+              }
+            }
+
+            visitorsAvg.push(visitorsAvgValue);
+            visitorsStd.push(visitorsStdValue);
+
+            // 查询广告花费原始数据（从 ad_stats 表）
+            const adCostData = await this.mysqlService.query<{
+              spend: number | null;
+            }>(
+              `SELECT spend
+              FROM ad_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const adCostValues = adCostData
+              .map((row) => row.spend)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let adCostAvgValue = 0;
+            let adCostStdValue = 0;
+            if (adCostValues.length > 0) {
+              const sum = adCostValues.reduce((acc, val) => acc + val, 0);
+              adCostAvgValue = sum / adCostValues.length;
+              if (adCostValues.length > 1) {
+                const mean = adCostAvgValue;
+                const variance =
+                  adCostValues.reduce(
+                    (acc, val) => acc + Math.pow(val - mean, 2),
+                    0,
+                  ) / (adCostValues.length - 1);
+                adCostStdValue = Math.sqrt(variance);
+              }
+            }
+
+            adCostAvg.push(adCostAvgValue);
+            adCostStd.push(adCostStdValue);
+
+            // 查询销售额原始数据（从 daily_product_stats 表的 confirmed_sales 字段）
+            const salesData = await this.mysqlService.query<{
+              confirmed_sales: number | null;
+            }>(
+              `SELECT confirmed_sales
+              FROM daily_product_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const salesValues = salesData
+              .map((row) => row.confirmed_sales)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let salesAvgValue = 0;
+            let salesStdValue = 0;
+            if (salesValues.length > 0) {
+              const sum = salesValues.reduce((acc, val) => acc + val, 0);
+              salesAvgValue = sum / salesValues.length;
+              if (salesValues.length > 1) {
+                const mean = salesAvgValue;
+                const variance =
+                  salesValues.reduce(
+                    (acc, val) => acc + Math.pow(val - mean, 2),
+                    0,
+                  ) / (salesValues.length - 1);
+                salesStdValue = Math.sqrt(variance);
+              }
+            }
+
+            salesAvg.push(salesAvgValue);
+            salesStd.push(salesStdValue);
+
+            console.log(
+              `    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}, std=${visitorsStdValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}, std=${adCostStdValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)}, std=${salesStdValue.toFixed(2)})`,
+            );
+          } catch (error) {
+            console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
+            // 发生错误时，设置为默认值
+            visitorsAvg.push(0);
+            visitorsStd.push(0);
+            adCostAvg.push(0);
+            adCostStd.push(0);
+            salesAvg.push(0);
+            salesStd.push(0);
+          }
+        }
+
+        // 3. 基于变异系数计算预警等级
+        const warningLevel = this.calculateWarningLevelFromCV(
+          visitorsAvg,
+          visitorsStd,
+          adCostAvg,
+          adCostStd,
+          salesAvg,
+          salesStd,
+        );
+
+        // 生成警告提示语
+        const warningMessages: string[] = [];
+        // 检查1天和3天的数据，生成警告信息
+        const index1Day = 4; // 1日的索引
+        const index3Day = 3; // 3日的索引
+
+        // 检查访客数
+        if (visitorsAvg[index1Day] > 0) {
+          const cv1Day = visitorsStd[index1Day] / visitorsAvg[index1Day];
+          if (cv1Day >= WARNING_LEVEL_THRESHOLDS.一般) {
+            warningMessages.push(
+              `近1天访客数波动${cv1Day >= WARNING_LEVEL_THRESHOLDS.严重 ? '严重' : '一般'}，建议关注`,
+            );
+          }
+        }
+
+        // 检查广告花费
+        if (adCostAvg[index1Day] > 0) {
+          const cv1Day = adCostStd[index1Day] / adCostAvg[index1Day];
+          if (cv1Day >= WARNING_LEVEL_THRESHOLDS.一般) {
+            warningMessages.push(
+              `近1天广告花费波动${cv1Day >= WARNING_LEVEL_THRESHOLDS.严重 ? '严重' : '一般'}，建议关注`,
+            );
+          }
+        }
+
+        // 检查销售额
+        if (salesAvg[index1Day] > 0) {
+          const cv1Day = salesStd[index1Day] / salesAvg[index1Day];
+          if (cv1Day >= WARNING_LEVEL_THRESHOLDS.一般) {
+            warningMessages.push(
+              `近1天销售额波动${cv1Day >= WARNING_LEVEL_THRESHOLDS.严重 ? '严重' : '一般'}，建议关注`,
+            );
+          }
+        }
+
+        // 如果1天没有明显波动，检查3天
+        if (warningMessages.length === 0) {
+          if (visitorsAvg[index3Day] > 0) {
+            const cv3Day = visitorsStd[index3Day] / visitorsAvg[index3Day];
+            if (cv3Day >= WARNING_LEVEL_THRESHOLDS.轻微) {
+              warningMessages.push('近3天访客数波动，建议关注');
+            }
+          }
+          if (adCostAvg[index3Day] > 0) {
+            const cv3Day = adCostStd[index3Day] / adCostAvg[index3Day];
+            if (cv3Day >= WARNING_LEVEL_THRESHOLDS.轻微) {
+              warningMessages.push('近3天广告花费波动，建议关注');
+            }
+          }
+          if (salesAvg[index3Day] > 0) {
+            const cv3Day = salesStd[index3Day] / salesAvg[index3Day];
+            if (cv3Day >= WARNING_LEVEL_THRESHOLDS.轻微) {
+              warningMessages.push('近3天销售额波动，建议关注');
+            }
+          }
+        }
+
+        console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
+        if (warningMessages.length > 0) {
+          console.log(`  [${product_id}] 警告信息:`, warningMessages);
+        }
+
+        return {
+          id: product_id,
+          name: product_name,
+          image: product_image,
+          visitorsAvg,
+          visitorsVolatilityBaseline,
+          adCostAvg,
+          adCostVolatilityBaseline,
+          salesAvg,
+          salesVolatilityBaseline,
+          warningLevel,
+          warningMessages,
+          custom_category_1: custom_category_1 || null,
+          custom_category_2: custom_category_2 || null,
+          custom_category_3: custom_category_3 || null,
+          custom_category_4: custom_category_4 || null,
+        };
+      }),
+    );
+
+    // 按照销售额从大到小排序（使用30天平均值作为排序依据）
+    result.sort((a, b) => {
+      const salesA = a.salesAvg[0] || 0; // 30天销售额平均值
+      const salesB = b.salesAvg[0] || 0; // 30天销售额平均值
+      return salesB - salesA; // 从大到小排序
+    });
+
+    console.log('\n=== getPotentialLinkMonitorData 函数执行完成 ===');
+    console.log(`总共处理了 ${result.length} 个商品`);
+    console.log('==========================================\n');
+
+    return result;
+  }
+
+  /**
+   * 基于变异系数计算预警等级
+   * @param visitorsAvg 访客数平均值数组 [30日, 15日, 7日, 3日, 1日]
+   * @param visitorsStd 访客数标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * @param adCostAvg 广告花费平均值数组 [30日, 15日, 7日, 3日, 1日]
+   * @param adCostStd 广告花费标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * @param salesAvg 销售额平均值数组 [30日, 15日, 7日, 3日, 1日]
+   * @param salesStd 销售额标准差数组 [30日, 15日, 7日, 3日, 1日]
+   * @returns 预警等级
+   */
+  private calculateWarningLevelFromCV(
+    visitorsAvg: number[],
+    visitorsStd: number[],
+    adCostAvg: number[],
+    adCostStd: number[],
+    salesAvg: number[],
+    salesStd: number[],
+  ): '严重' | '一般' | '轻微' | '正常' {
+    // 获取最近的时间维度（1日和3日）的索引
+    // 数组顺序：[30日, 15日, 7日, 3日, 1日]
+    // 索引：    [0,    1,    2,   3,   4]
+    const index1Day = 4; // 1日的索引
+    const index3Day = 3; // 3日的索引
+
+    // 计算1日的变异系数（CV = 标准差/平均值）
+    const visitorsCV1Day =
+      visitorsAvg[index1Day] > 0
+        ? visitorsStd[index1Day] / visitorsAvg[index1Day]
+        : 0.001; // 如果平均值为0，使用很小的数避免除零
+    const adCostCV1Day =
+      adCostAvg[index1Day] > 0
+        ? adCostStd[index1Day] / adCostAvg[index1Day]
+        : 0.001;
+    const salesCV1Day =
+      salesAvg[index1Day] > 0
+        ? salesStd[index1Day] / salesAvg[index1Day]
+        : 0.001;
+
+    // 计算3日的变异系数
+    const visitorsCV3Day =
+      visitorsAvg[index3Day] > 0
+        ? visitorsStd[index3Day] / visitorsAvg[index3Day]
+        : 0.001;
+    const adCostCV3Day =
+      adCostAvg[index3Day] > 0
+        ? adCostStd[index3Day] / adCostAvg[index3Day]
+        : 0.001;
+    const salesCV3Day =
+      salesAvg[index3Day] > 0
+        ? salesStd[index3Day] / salesAvg[index3Day]
+        : 0.001;
+
+    // 对每个指标，根据其变异系数和权重计算加权分数
+    const visitorsScore1Day =
+      visitorsCV1Day * METRIC_WEIGHTS_POTENTIAL.visitors;
+    const adCostScore1Day = adCostCV1Day * METRIC_WEIGHTS_POTENTIAL.adCost;
+    const salesScore1Day = salesCV1Day * METRIC_WEIGHTS_POTENTIAL.sales;
+
+    const visitorsScore3Day =
+      visitorsCV3Day * METRIC_WEIGHTS_POTENTIAL.visitors;
+    const adCostScore3Day = adCostCV3Day * METRIC_WEIGHTS_POTENTIAL.adCost;
+    const salesScore3Day = salesCV3Day * METRIC_WEIGHTS_POTENTIAL.sales;
+
+    // 计算综合预警分数（1日权重0.6，3日权重0.4）
+    const compositeScore =
+      (visitorsScore1Day + adCostScore1Day + salesScore1Day) * 0.6 +
+      (visitorsScore3Day + adCostScore3Day + salesScore3Day) * 0.4;
+
+    // 根据综合分数判断预警等级
+    if (compositeScore >= WARNING_LEVEL_THRESHOLDS.严重) {
+      return '严重';
+    } else if (compositeScore >= WARNING_LEVEL_THRESHOLDS.一般) {
+      return '一般';
+    } else if (compositeScore >= WARNING_LEVEL_THRESHOLDS.轻微) {
+      return '轻微';
+    } else {
+      return '正常';
+    }
+  }
+
+  /**
+   * 获取潜力产品的AI建议
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param date 日期（YYYY-MM-DD 格式）
+   * @param productID 产品ID
+   * @param productName 产品名称
+   * @returns AI建议
+   */
+  async getPotentialLinkAISuggestion(
+    shopID: string,
+    shopName: string,
+    date: string,
+    productID: string,
+    productName: string,
+  ): Promise<{ suggestion: string }> {
+    console.log('=== getPotentialLinkAISuggestion 函数开始执行 ===');
+    console.log('接收到的参数:', {
+      shopID,
+      shopName,
+      date,
+      productID,
+      productName,
+    });
+
+    // 获取该产品的监控数据
+    const monitorData = await this.getPotentialLinkMonitorData(
+      shopID,
+      shopName,
+      date,
+    );
+
+    const productData = monitorData.find((p) => p.id === productID);
+
+    if (!productData) {
+      return {
+        suggestion: '未找到该产品的监控数据，无法生成建议。',
+      };
+    }
+
+    // 基于数据分析生成建议
+    const suggestions: string[] = [];
+
+    // 分析访客趋势
+    const visitorsTrend = this.analyzeTrend(productData.visitorsAvg);
+    if (visitorsTrend === '上升') {
+      suggestions.push('访客数呈上升趋势，建议继续保持当前推广策略');
+    } else if (visitorsTrend === '下降') {
+      suggestions.push('访客数呈下降趋势，建议优化推广策略或增加广告投入');
+    }
+
+    // 分析广告花费效率
+    const adCostTrend = this.analyzeTrend(productData.adCostAvg);
+    const salesTrend = this.analyzeTrend(productData.salesAvg);
+    if (adCostTrend === '上升' && salesTrend === '上升') {
+      suggestions.push('广告投入和销售额同步增长，ROI表现良好');
+    } else if (adCostTrend === '上升' && salesTrend !== '上升') {
+      suggestions.push('广告投入增加但销售额未同步增长，建议优化广告投放策略');
+    }
+
+    // 分析预警等级
+    if (productData.warningLevel === '严重') {
+      suggestions.push('当前数据波动较大，建议密切关注并采取相应措施');
+    } else if (productData.warningLevel === '一般') {
+      suggestions.push('数据存在一定波动，建议持续关注趋势变化');
+    }
+
+    // 分析波动率
+    const visitorsVolatility = productData.visitorsVolatilityBaseline.find(
+      (v) => v.window === 3,
+    );
+    if (visitorsVolatility && visitorsVolatility.level === '明显') {
+      suggestions.push('访客数波动明显，建议检查推广渠道和广告效果');
+    }
+
+    const defaultSuggestion =
+      '基于当前数据分析，该潜力产品在近期表现出良好的增长趋势。建议：1. 继续保持当前广告投入水平；2. 关注访客转化率的提升；3. 可以考虑扩大库存以应对潜在的需求增长。';
+
+    const finalSuggestion =
+      suggestions.length > 0
+        ? suggestions.join('。') + '。'
+        : defaultSuggestion;
+
+    console.log('生成的AI建议:', finalSuggestion);
+    console.log('=== getPotentialLinkAISuggestion 函数执行完成 ===\n');
+
+    return {
+      suggestion: finalSuggestion,
+    };
+  }
+
+  /**
+   * 分析趋势（简单判断：最近值相对于较远值的趋势）
+   * @param values 数值数组 [30日, 15日, 7日, 3日, 1日]
+   * @returns 趋势：'上升' | '下降' | '稳定'
+   */
+  private analyzeTrend(values: number[]): '上升' | '下降' | '稳定' {
+    if (values.length < 2) {
+      return '稳定';
+    }
+
+    // 比较最近1天和30天的平均值
+    const recent = values[values.length - 1]; // 1日
+    const longTerm = values[0]; // 30日
+
+    if (longTerm === 0) {
+      return recent > 0 ? '上升' : '稳定';
+    }
+
+    const changeRate = (recent - longTerm) / longTerm;
+
+    if (changeRate > 0.1) {
+      return '上升';
+    } else if (changeRate < -0.1) {
+      return '下降';
+    } else {
+      return '稳定';
+    }
+  }
+
+  /**
+   * 获取商品列表（支持分页）
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param page 页码（默认1）
+   * @param pageSize 每页数量（默认20）
+   * @param customCategory 自定义分类筛选（可选）
+   * @returns 商品列表和总数
+   */
+  async getProductItems(
+    shopID: string,
+    shopName: string,
+    page: number = 1,
+    pageSize: number = 20,
+    customCategory?: string,
+  ): Promise<{
+    data: Array<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+    }>;
+    total: number;
+  }> {
+    // 验证分页参数
+    const validPage = Math.max(1, Math.floor(Number(page)) || 1);
+    const validPageSize = Math.max(
+      1,
+      Math.min(100, Math.floor(Number(pageSize)) || 20),
+    );
+    const offset = (validPage - 1) * validPageSize;
+
+    const trimmedCategory =
+      typeof customCategory === 'string' ? customCategory.trim() : undefined;
+
+    const whereConditions: string[] = ['shop_id = ?'];
+    const params: Array<string | number> = [shopID];
+
+    if (trimmedCategory) {
+      const likeValue = `%${trimmedCategory}%`;
+      whereConditions.push(
+        `(custom_category_1 LIKE ? OR custom_category_2 LIKE ? OR custom_category_3 LIKE ? OR custom_category_4 LIKE ?)`,
+      );
+      params.push(likeValue, likeValue, likeValue, likeValue);
+    }
+
+    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+    // 查询总数
+    const countResult = await this.mysqlService.queryOne<{ total: number }>(
+      `SELECT COUNT(*) as total 
+       FROM product_items 
+       ${whereClause}`,
+      [...params],
+    );
+    const total = countResult?.total || 0;
+
+    // 查询商品列表
+    // 注意：MySQL 的 LIMIT 和 OFFSET 不能使用参数占位符，必须使用字面量
+    // 由于我们已经验证了 validPageSize 和 offset 是整数，所以使用模板字符串是安全的
+    const products = await this.mysqlService.query<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4
+      FROM product_items 
+      ${whereClause} 
+      ORDER BY id DESC 
+      LIMIT ${validPageSize} OFFSET ${offset}`,
+      [...params],
+    );
+
+    return {
+      data: products,
+      total,
+    };
+  }
+
+  /**
+   * 更新商品自定义分类
+   * @param id 商品ID（可以是主键id或product_id）
+   * @param updateData 更新的分类数据
+   * @returns 更新后的商品数据
+   */
+  async updateProductItemCustomCategory(
+    id: string | number,
+    updateData: {
+      custom_category_1?: string | null;
+      custom_category_2?: string | null;
+      custom_category_3?: string | null;
+      custom_category_4?: string | null;
+    },
+  ): Promise<{
+    id: number;
+    product_id: string;
+    product_name: string;
+    product_image: string | null;
+    custom_category_1: string | null;
+    custom_category_2: string | null;
+    custom_category_3: string | null;
+    custom_category_4: string | null;
+  }> {
+    // 先查找商品（支持通过主键id或product_id查找）
+    const product = await this.mysqlService.queryOne<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4
+      FROM product_items 
+      WHERE id = ? OR product_id = ? 
+      LIMIT 1`,
+      [id, id],
+    );
+
+    if (!product) {
+      throw new Error('商品不存在');
+    }
+
+    // 构建更新数据（只更新提供的字段）
+    const updateFields: Record<string, string | null> = {};
+    if (updateData.custom_category_1 !== undefined) {
+      updateFields.custom_category_1 = updateData.custom_category_1;
+    }
+    if (updateData.custom_category_2 !== undefined) {
+      updateFields.custom_category_2 = updateData.custom_category_2;
+    }
+    if (updateData.custom_category_3 !== undefined) {
+      updateFields.custom_category_3 = updateData.custom_category_3;
+    }
+    if (updateData.custom_category_4 !== undefined) {
+      updateFields.custom_category_4 = updateData.custom_category_4;
+    }
+
+    // 如果没有要更新的字段，直接返回原数据
+    if (Object.keys(updateFields).length === 0) {
+      return product;
+    }
+
+    // 执行更新
+    await this.mysqlService.update('product_items', updateFields, {
+      id: product.id,
+    });
+
+    // 查询更新后的数据
+    const updatedProduct = await this.mysqlService.queryOne<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4
+      FROM product_items 
+      WHERE id = ?`,
+      [product.id],
+    );
+
+    if (!updatedProduct) {
+      throw new Error('更新后无法获取商品数据');
+    }
+
+    return updatedProduct;
+  }
+
+  /**
+   * 删除商品
+   * @param id 商品ID（可以是主键id或product_id）
+   * @returns 删除是否成功
+   */
+  async deleteProductItem(id: string | number): Promise<boolean> {
+    // 先查找商品（支持通过主键id或product_id查找）
+    const product = await this.mysqlService.queryOne<{ id: number }>(
+      `SELECT id FROM product_items 
+       WHERE id = ? OR product_id = ? 
+       LIMIT 1`,
+      [id, id],
+    );
+
+    if (!product) {
+      throw new Error('商品不存在');
+    }
+
+    // 执行删除
+    const affectedRows = await this.mysqlService.delete('product_items', {
+      id: product.id,
+    });
+
+    return affectedRows > 0;
   }
 }

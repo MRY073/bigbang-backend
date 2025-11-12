@@ -11,39 +11,49 @@ export class FinishedLinkMonitorController {
 
   /**
    * 成品链接监控
-   * GET /api/finished/link/monitor/list?shopID=店铺ID&shopName=店铺名称&date=2025-11-08
+   * GET /api/finished/link/monitor/list?shopID=店铺ID&shopName=店铺名称&date=2024-01-15&customCategory=分类名称
    */
   @Get('link/monitor/list')
   async getFinishedLinkMonitor(
     @Query() query: FinishedLinkMonitorDto,
     @Res() res: Response,
   ) {
-    const { shopID, shopName, date } = query;
+    const { shopID, shopName, date, customCategory } = query;
 
     if (!shopID || !shopName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
+        error: '参数错误',
         message: 'shopID 和 shopName 参数不能为空',
       });
     }
 
-    // 验证日期格式（如果提供了日期参数）
-    if (date) {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(date)) {
-        return res.status(HttpStatus.BAD_REQUEST).json({
-          success: false,
-          message: 'date 参数格式错误，应为 YYYY-MM-DD 格式（如：2025-11-08）',
-        });
-      }
-      // 验证日期是否有效
-      const dateObj = new Date(date);
-      if (isNaN(dateObj.getTime())) {
-        return res.status(HttpStatus.BAD_REQUEST).json({
-          success: false,
-          message: 'date 参数不是有效的日期',
-        });
-      }
+    // 验证日期格式（date 现在是必填参数）
+    if (!date) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '参数错误',
+        message: 'date 参数不能为空',
+      });
+    }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '参数错误',
+        message: 'date 参数格式错误，应为 YYYY-MM-DD 格式（如：2024-01-15）',
+      });
+    }
+
+    // 验证日期是否有效
+    const dateObj = new Date(date);
+    if (isNaN(dateObj.getTime())) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '参数错误',
+        message: 'date 参数不是有效的日期',
+      });
     }
 
     try {
@@ -51,6 +61,7 @@ export class FinishedLinkMonitorController {
         shopID,
         shopName,
         date,
+        customCategory,
       );
 
       return res.status(HttpStatus.OK).json({
