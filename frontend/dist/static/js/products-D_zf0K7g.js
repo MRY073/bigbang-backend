@@ -1,0 +1,1 @@
+import{fG as r}from"./index-BBIx6VGs.js";const s=t=>r.request("get","/api/products",{params:t}),o=t=>r.request("put","/api/products/stage",{data:t}),u=t=>r.request("get","/api/products/testing-monitor",{params:t});export{u as a,s as g,o as u};
