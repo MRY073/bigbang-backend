@@ -16,6 +16,7 @@ const upload_module_1 = require("./upload/upload.module");
 const products_module_1 = require("./products/products.module");
 const ad_analysis_module_1 = require("./ad-analysis/ad-analysis.module");
 const database_module_1 = require("./database/database.module");
+const ai_module_1 = require("./ai/ai.module");
 const serve_static_1 = require("@nestjs/serve-static");
 const path_1 = require("path");
 let AppModule = class AppModule {
@@ -53,6 +54,7 @@ exports.AppModule = AppModule = __decorate([
             upload_module_1.UploadModule,
             products_module_1.ProductsModule,
             ad_analysis_module_1.AdAnalysisModule,
+            ai_module_1.AiModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

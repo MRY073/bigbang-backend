@@ -8,6 +8,7 @@ import { ProductsModule } from './products/products.module';
 import { AdAnalysisModule } from './ad-analysis/ad-analysis.module';
 // import { StatsModule } from './stats/stats.module';
 import { DatabaseModule } from './database/database.module';
+import { AiModule } from './ai/ai.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 
@@ -42,6 +43,7 @@ import { join } from 'path';
     UploadModule,
     ProductsModule,
     AdAnalysisModule,
+    AiModule, // AI 服务模块（系统提示词）
     // StatsModule,
   ],
   controllers: [AppController],

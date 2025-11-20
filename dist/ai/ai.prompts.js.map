@@ -1,0 +1,1 @@
+{"version":3,"file":"ai.prompts.js","sourceRoot":"","sources":["../../src/ai/ai.prompts.ts"],"names":[],"mappings":";;;AA6EA,0CAEC;AAOD,0CAEC;AA9EY,QAAA,aAAa,GAAG;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;mBA6DV,CAAC;AAMpB,SAAgB,eAAe;IAC7B,OAAO,qBAAa,CAAC;AACvB,CAAC;AAOD,SAAgB,eAAe,CAAC,kBAA0B;IACxD,OAAO,GAAG,qBAAa,uBAAuB,kBAAkB,EAAE,CAAC;AACrE,CAAC"}
