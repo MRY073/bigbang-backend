@@ -2,5 +2,6 @@
 export class QueryProductsDto {
   shopID: string; // 店铺ID
   shopName: string; // 店铺名称
+  customCategory?: string; // 自定义分类筛选条件（可选）
 }
 

@@ -1,1 +1,1 @@
-{"version":3,"file":"query-products.dto.js","sourceRoot":"","sources":["../../../src/products/dto/query-products.dto.ts"],"names":[],"mappings":";;;AACA,MAAa,gBAAgB;IAC3B,MAAM,CAAS;IACf,QAAQ,CAAS;CAClB;AAHD,4CAGC"}
+{"version":3,"file":"query-products.dto.js","sourceRoot":"","sources":["../../../src/products/dto/query-products.dto.ts"],"names":[],"mappings":";;;AACA,MAAa,gBAAgB;IAC3B,MAAM,CAAS;IACf,QAAQ,CAAS;IACjB,cAAc,CAAU;CACzB;AAJD,4CAIC"}

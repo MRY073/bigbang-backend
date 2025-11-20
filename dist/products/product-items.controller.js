@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const products_service_1 = require("./products.service");
 const query_product_items_dto_1 = require("./dto/query-product-items.dto");
 const update_custom_category_dto_1 = require("./dto/update-custom-category.dto");
+const update_product_status_dto_1 = require("./dto/update-product-status.dto");
 const auth_guard_1 = require("../auth/auth.guard");
 let ProductItemsController = class ProductItemsController {
     productsService;
@@ -97,6 +98,15 @@ let ProductItemsController = class ProductItemsController {
                     message: '无法找到指定的商品',
                 });
             }
+            if (errorMessage.includes('prompt_note') ||
+                errorMessage.includes('不能超过') ||
+                errorMessage.includes('必须是字符串')) {
+                return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                    success: false,
+                    error: '参数错误',
+                    message: errorMessage,
+                });
+            }
             return res.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json({
                 success: false,
                 error: '服务器错误',
@@ -123,6 +133,69 @@ let ProductItemsController = class ProductItemsController {
             const safeMessage = error instanceof Error ? error.message : String(error);
             console.error('删除商品失败:', safeMessage);
             const errorMessage = safeMessage || '删除商品失败';
+            if (errorMessage.includes('商品不存在')) {
+                return res.status(common_1.HttpStatus.NOT_FOUND).json({
+                    success: false,
+                    error: '商品不存在',
+                    message: '无法找到指定的商品',
+                });
+            }
+            return res.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json({
+                success: false,
+                error: '服务器错误',
+                message: errorMessage,
+            });
+        }
+    }
+    async getOfflineProducts(query, res) {
+        const { shopID, shopName, page, pageSize, customCategory } = query;
+        if (!shopID || !shopName) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '参数错误',
+                message: 'shopID 和 shopName 参数不能为空',
+            });
+        }
+        try {
+            const result = await this.productsService.getOfflineProducts(shopID, shopName, page, pageSize, customCategory);
+            return res.status(common_1.HttpStatus.OK).json({
+                success: true,
+                message: `拉取成功，共 ${result.total} 条下架商品数据`,
+                data: result.data,
+                total: result.total,
+            });
+        }
+        catch (error) {
+            const safeMessage = error instanceof Error ? error.message : String(error);
+            console.error('获取下架商品列表失败:', safeMessage);
+            return res.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json({
+                success: false,
+                error: '服务器错误',
+                message: safeMessage || '获取下架商品列表失败',
+            });
+        }
+    }
+    async updateProductStatus(id, body, res) {
+        const { status } = body;
+        if (status !== 0 && status !== 1) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '参数错误',
+                message: 'status 必须是 0（上架）或 1（下架）',
+            });
+        }
+        try {
+            const updatedProduct = await this.productsService.updateProductStatus(id, status);
+            return res.status(common_1.HttpStatus.OK).json({
+                success: true,
+                message: status === 1 ? '商品已下架' : '商品已上架',
+                data: updatedProduct,
+            });
+        }
+        catch (error) {
+            const safeMessage = error instanceof Error ? error.message : String(error);
+            console.error('更新商品状态失败:', safeMessage);
+            const errorMessage = safeMessage || '更新商品状态失败';
             if (errorMessage.includes('商品不存在')) {
                 return res.status(common_1.HttpStatus.NOT_FOUND).json({
                     success: false,
@@ -172,6 +245,23 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], ProductItemsController.prototype, "deleteProductItem", null);
+__decorate([
+    (0, common_1.Get)('offline'),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [query_product_items_dto_1.QueryProductItemsDto, Object]),
+    __metadata("design:returntype", Promise)
+], ProductItemsController.prototype, "getOfflineProducts", null);
+__decorate([
+    (0, common_1.Put)(':id/status'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_product_status_dto_1.UpdateProductStatusDto, Object]),
+    __metadata("design:returntype", Promise)
+], ProductItemsController.prototype, "updateProductStatus", null);
 exports.ProductItemsController = ProductItemsController = __decorate([
     (0, common_1.Controller)('product-items'),
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),

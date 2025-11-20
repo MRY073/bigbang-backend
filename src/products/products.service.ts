@@ -325,12 +325,14 @@ export class ProductsService {
    * 查询店铺商品列表
    * @param shopID 店铺ID
    * @param shopName 店铺名称
-   * @returns 商品列表，包含产品ID、产品名称、产品主图、四个阶段的时间段
+   * @param customCategory 自定义分类筛选条件（可选）
+   * @returns 商品列表，包含产品ID、产品名称、产品主图、四个阶段的时间段、自定义分类字段
    */
   async getProductsByShop(
     shopID: string,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     shopName: string, // 保留参数以兼容现有接口，暂未使用
+    customCategory?: string,
   ): Promise<
     Array<{
       product_id: string;
@@ -352,8 +354,31 @@ export class ProductsService {
         start_time: string | null;
         end_time: string | null;
       };
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+      prompt_note: string | null;
     }>
   > {
+    // 构建 WHERE 子句
+    let whereClause = 'WHERE shop_id = ?';
+    const queryParams: Array<string | number> = [shopID];
+
+    // 如果提供了 customCategory 参数，添加筛选条件
+    if (customCategory && customCategory.trim()) {
+      const trimmedCategory = customCategory.trim();
+      // 使用 LOWER() 函数实现不区分大小写的匹配，排除 NULL 值
+      whereClause += ` AND (
+        (custom_category_1 IS NOT NULL AND LOWER(custom_category_1) LIKE ?) OR
+        (custom_category_2 IS NOT NULL AND LOWER(custom_category_2) LIKE ?) OR
+        (custom_category_3 IS NOT NULL AND LOWER(custom_category_3) LIKE ?) OR
+        (custom_category_4 IS NOT NULL AND LOWER(custom_category_4) LIKE ?)
+      )`;
+      const categoryPattern = `%${trimmedCategory.toLowerCase()}%`;
+      queryParams.push(categoryPattern, categoryPattern, categoryPattern, categoryPattern);
+    }
+
     const products = await this.mysqlService.query<{
       product_id: string;
       product_name: string;
@@ -366,6 +391,11 @@ export class ProductsService {
       product_stage_end: Date | null;
       abandoned_stage_start: Date | null;
       abandoned_stage_end: Date | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+      prompt_note: string | null;
     }>(
       `SELECT 
         product_id,
@@ -378,51 +408,73 @@ export class ProductsService {
         product_stage_start,
         product_stage_end,
         abandoned_stage_start,
-        abandoned_stage_end
+        abandoned_stage_end,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4,
+        prompt_note
       FROM product_items 
-      WHERE shop_id = ? 
+      ${whereClause}
+        AND (status IS NULL OR status = 0)
       ORDER BY id ASC`,
-      [shopID],
+      queryParams,
     );
 
-    // 转换日期格式为 ISO 8601 字符串
-    return products.map((product) => ({
-      product_id: product.product_id,
-      product_name: product.product_name,
-      product_image: product.product_image,
-      testing_stage: {
-        start_time: product.testing_stage_start
-          ? new Date(product.testing_stage_start).toISOString()
-          : null,
-        end_time: product.testing_stage_end
-          ? new Date(product.testing_stage_end).toISOString()
-          : null,
-      },
-      potential_stage: {
-        start_time: product.potential_stage_start
-          ? new Date(product.potential_stage_start).toISOString()
-          : null,
-        end_time: product.potential_stage_end
-          ? new Date(product.potential_stage_end).toISOString()
-          : null,
-      },
-      product_stage: {
-        start_time: product.product_stage_start
-          ? new Date(product.product_stage_start).toISOString()
-          : null,
-        end_time: product.product_stage_end
-          ? new Date(product.product_stage_end).toISOString()
-          : null,
-      },
-      abandoned_stage: {
-        start_time: product.abandoned_stage_start
-          ? new Date(product.abandoned_stage_start).toISOString()
-          : null,
-        end_time: product.abandoned_stage_end
-          ? new Date(product.abandoned_stage_end).toISOString()
-          : null,
-      },
-    }));
+    // 转换日期格式为 ISO 8601 字符串，处理自定义分类字段
+    return products.map((product) => {
+      // 处理自定义分类字段：去除首尾空格，空字符串转为 null
+      const processCategory = (value: string | null): string | null => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+        const trimmed = value.trim();
+        return trimmed === '' ? null : trimmed;
+      };
+
+      return {
+        product_id: product.product_id,
+        product_name: product.product_name,
+        product_image: product.product_image,
+        testing_stage: {
+          start_time: product.testing_stage_start
+            ? new Date(product.testing_stage_start).toISOString()
+            : null,
+          end_time: product.testing_stage_end
+            ? new Date(product.testing_stage_end).toISOString()
+            : null,
+        },
+        potential_stage: {
+          start_time: product.potential_stage_start
+            ? new Date(product.potential_stage_start).toISOString()
+            : null,
+          end_time: product.potential_stage_end
+            ? new Date(product.potential_stage_end).toISOString()
+            : null,
+        },
+        product_stage: {
+          start_time: product.product_stage_start
+            ? new Date(product.product_stage_start).toISOString()
+            : null,
+          end_time: product.product_stage_end
+            ? new Date(product.product_stage_end).toISOString()
+            : null,
+        },
+        abandoned_stage: {
+          start_time: product.abandoned_stage_start
+            ? new Date(product.abandoned_stage_start).toISOString()
+            : null,
+          end_time: product.abandoned_stage_end
+            ? new Date(product.abandoned_stage_end).toISOString()
+            : null,
+        },
+        custom_category_1: processCategory(product.custom_category_1),
+        custom_category_2: processCategory(product.custom_category_2),
+        custom_category_3: processCategory(product.custom_category_3),
+        custom_category_4: processCategory(product.custom_category_4),
+        prompt_note: product.prompt_note,
+      };
+    });
   }
 
   /**
@@ -569,6 +621,7 @@ export class ProductsService {
         AND testing_stage_start IS NOT NULL
         AND testing_stage_start <= ?
         AND (testing_stage_end IS NULL OR testing_stage_end >= ?)
+        AND (status IS NULL OR status = 0)
       ORDER BY id ASC`,
       [shopID, currentDate, currentDate],
     );
@@ -775,13 +828,13 @@ export class ProductsService {
       category: string | null;
     }>(
       `SELECT DISTINCT category FROM (
-        SELECT TRIM(custom_category_1) AS category FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_1) AS category FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
         UNION ALL
-        SELECT TRIM(custom_category_2) FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_2) FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
         UNION ALL
-        SELECT TRIM(custom_category_3) FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_3) FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
         UNION ALL
-        SELECT TRIM(custom_category_4) FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_4) FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
       ) AS categories
       WHERE category IS NOT NULL AND category <> ''`,
       [shopID, shopID, shopID, shopID],
@@ -875,7 +928,8 @@ export class ProductsService {
     let whereClause = `WHERE shop_id = ? 
         AND product_stage_start IS NOT NULL
         AND product_stage_start <= ?
-        AND (product_stage_end IS NULL OR product_stage_end >= ?)`;
+        AND (product_stage_end IS NULL OR product_stage_end >= ?)
+        AND (status IS NULL OR status = 0)`;
     
     const queryParams: any[] = [shopID, currentDate, currentDate];
     
@@ -1527,6 +1581,7 @@ export class ProductsService {
         AND potential_stage_start IS NOT NULL
         AND potential_stage_start <= ?
         AND (potential_stage_end IS NULL OR potential_stage_end >= ?)
+        AND (status IS NULL OR status = 0)
       ORDER BY id ASC`,
       [shopID, currentDate, currentDate],
     );
@@ -2151,6 +2206,7 @@ export class ProductsService {
       custom_category_2: string | null;
       custom_category_3: string | null;
       custom_category_4: string | null;
+      prompt_note: string | null;
     }>;
     total: number;
   }> {
@@ -2165,7 +2221,7 @@ export class ProductsService {
     const trimmedCategory =
       typeof customCategory === 'string' ? customCategory.trim() : undefined;
 
-    const whereConditions: string[] = ['shop_id = ?'];
+    const whereConditions: string[] = ['shop_id = ?', '(status IS NULL OR status = 0)'];
     const params: Array<string | number> = [shopID];
 
     if (trimmedCategory) {
@@ -2199,6 +2255,7 @@ export class ProductsService {
       custom_category_2: string | null;
       custom_category_3: string | null;
       custom_category_4: string | null;
+      prompt_note: string | null;
     }>(
       `SELECT 
         id,
@@ -2208,7 +2265,8 @@ export class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        prompt_note
       FROM product_items 
       ${whereClause} 
       ORDER BY id DESC 
@@ -2220,6 +2278,34 @@ export class ProductsService {
       data: products,
       total,
     };
+  }
+
+  /**
+   * 验证并处理 prompt_note 字段
+   * @param value 原始值
+   * @returns 处理后的值（null 或去除首尾空格的字符串）
+   * @throws 如果值无效则抛出错误
+   */
+  private validatePromptNote(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      throw new Error('prompt_note 必须是字符串类型');
+    }
+
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    if (trimmed.length > 2000) {
+      throw new Error('prompt_note 不能超过 2000 个字符');
+    }
+
+    return trimmed;
   }
 
   /**
@@ -2235,6 +2321,7 @@ export class ProductsService {
       custom_category_2?: string | null;
       custom_category_3?: string | null;
       custom_category_4?: string | null;
+      prompt_note?: string | null;
     },
   ): Promise<{
     id: number;
@@ -2245,6 +2332,7 @@ export class ProductsService {
     custom_category_2: string | null;
     custom_category_3: string | null;
     custom_category_4: string | null;
+    prompt_note: string | null;
   }> {
     // 先查找商品（支持通过主键id或product_id查找）
     const product = await this.mysqlService.queryOne<{
@@ -2256,6 +2344,7 @@ export class ProductsService {
       custom_category_2: string | null;
       custom_category_3: string | null;
       custom_category_4: string | null;
+      prompt_note: string | null;
     }>(
       `SELECT 
         id,
@@ -2265,7 +2354,8 @@ export class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        prompt_note
       FROM product_items 
       WHERE id = ? OR product_id = ? 
       LIMIT 1`,
@@ -2290,6 +2380,9 @@ export class ProductsService {
     if (updateData.custom_category_4 !== undefined) {
       updateFields.custom_category_4 = updateData.custom_category_4;
     }
+    if (updateData.prompt_note !== undefined) {
+      updateFields.prompt_note = this.validatePromptNote(updateData.prompt_note);
+    }
 
     // 如果没有要更新的字段，直接返回原数据
     if (Object.keys(updateFields).length === 0) {
@@ -2311,6 +2404,7 @@ export class ProductsService {
       custom_category_2: string | null;
       custom_category_3: string | null;
       custom_category_4: string | null;
+      prompt_note: string | null;
     }>(
       `SELECT 
         id,
@@ -2320,7 +2414,8 @@ export class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        prompt_note
       FROM product_items 
       WHERE id = ?`,
       [product.id],
@@ -2357,5 +2452,178 @@ export class ProductsService {
     });
 
     return affectedRows > 0;
+  }
+
+  /**
+   * 获取下架商品列表（支持分页）
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param page 页码（默认1）
+   * @param pageSize 每页数量（默认20）
+   * @param customCategory 自定义分类筛选（可选）
+   * @returns 下架商品列表和总数
+   */
+  async getOfflineProducts(
+    shopID: string,
+    shopName: string,
+    page: number = 1,
+    pageSize: number = 20,
+    customCategory?: string,
+  ): Promise<{
+    data: Array<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      status: number | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+      prompt_note: string | null;
+    }>;
+    total: number;
+  }> {
+    // 验证分页参数
+    const validPage = Math.max(1, Math.floor(Number(page)) || 1);
+    const validPageSize = Math.max(
+      1,
+      Math.min(100, Math.floor(Number(pageSize)) || 20),
+    );
+    const offset = (validPage - 1) * validPageSize;
+
+    const trimmedCategory =
+      typeof customCategory === 'string' ? customCategory.trim() : undefined;
+
+    const whereConditions: string[] = ['shop_id = ?', 'status = 1'];
+    const params: Array<string | number> = [shopID];
+
+    if (trimmedCategory) {
+      const likeValue = `%${trimmedCategory}%`;
+      whereConditions.push(
+        `(custom_category_1 LIKE ? OR custom_category_2 LIKE ? OR custom_category_3 LIKE ? OR custom_category_4 LIKE ?)`,
+      );
+      params.push(likeValue, likeValue, likeValue, likeValue);
+    }
+
+    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+    // 查询总数
+    const countResult = await this.mysqlService.queryOne<{ total: number }>(
+      `SELECT COUNT(*) as total 
+       FROM product_items 
+       ${whereClause}`,
+      [...params],
+    );
+    const total = countResult?.total || 0;
+
+    // 查询下架商品列表
+    const products = await this.mysqlService.query<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      status: number | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+      prompt_note: string | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        status,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4,
+        prompt_note
+      FROM product_items 
+      ${whereClause} 
+      ORDER BY id DESC 
+      LIMIT ${validPageSize} OFFSET ${offset}`,
+      [...params],
+    );
+
+    return {
+      data: products,
+      total,
+    };
+  }
+
+  /**
+   * 更新商品上下架状态
+   * @param id 商品ID（可以是主键id或product_id）
+   * @param status 上下架状态：0=上架，1=下架
+   * @returns 更新后的商品数据
+   */
+  async updateProductStatus(
+    id: string | number,
+    status: 0 | 1,
+  ): Promise<{
+    id: number;
+    product_id: string;
+    product_name: string;
+    product_image: string | null;
+    status: number | null;
+  }> {
+    // 先查找商品（支持通过主键id或product_id查找）
+    const product = await this.mysqlService.queryOne<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      status: number | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        status
+      FROM product_items 
+      WHERE id = ? OR product_id = ? 
+      LIMIT 1`,
+      [id, id],
+    );
+
+    if (!product) {
+      throw new Error('商品不存在');
+    }
+
+    // 执行更新
+    await this.mysqlService.update(
+      'product_items',
+      { status },
+      { id: product.id },
+    );
+
+    // 查询更新后的数据
+    const updatedProduct = await this.mysqlService.queryOne<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      status: number | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        status
+      FROM product_items 
+      WHERE id = ?`,
+      [product.id],
+    );
+
+    if (!updatedProduct) {
+      throw new Error('更新后无法获取商品数据');
+    }
+
+    return updatedProduct;
   }
 }

@@ -22,11 +22,11 @@ export class ProductsController {
 
   /**
    * 查询店铺商品列表
-   * GET /products?shopID=店铺ID&shopName=店铺名称
+   * GET /products?shopID=店铺ID&shopName=店铺名称&customCategory=自定义分类（可选）
    */
   @Get()
   async getProducts(@Query() query: QueryProductsDto, @Res() res: Response) {
-    const { shopID, shopName } = query;
+    const { shopID, shopName, customCategory } = query;
 
     if (!shopID || !shopName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
@@ -39,11 +39,11 @@ export class ProductsController {
       const products = await this.productsService.getProductsByShop(
         shopID,
         shopName,
+        customCategory,
       );
 
       return res.status(HttpStatus.OK).json({
         success: true,
-        message: '查询成功',
         data: products,
       });
     } catch (error: unknown) {

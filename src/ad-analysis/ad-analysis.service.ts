@@ -621,7 +621,9 @@ export class AdAnalysisService {
         product_name,
         product_image
       FROM product_items
-      WHERE shop_id = ? AND product_id IN (${productIds.map(() => '?').join(',')})
+      WHERE shop_id = ? 
+        AND product_id IN (${productIds.map(() => '?').join(',')})
+        AND (status IS NULL OR status = 0)
       ORDER BY product_id ASC`,
       [shopID, ...productIds],
     );

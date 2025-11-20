@@ -391,7 +391,9 @@ let AdAnalysisService = class AdAnalysisService {
         product_name,
         product_image
       FROM product_items
-      WHERE shop_id = ? AND product_id IN (${productIds.map(() => '?').join(',')})
+      WHERE shop_id = ? 
+        AND product_id IN (${productIds.map(() => '?').join(',')})
+        AND (status IS NULL OR status = 0)
       ORDER BY product_id ASC`, [shopID, ...productIds]);
         console.log(`查询到的商品信息条数: ${products?.length || 0}`);
         console.log('\n--- 第四步：合并数据并计算 ROI ---');

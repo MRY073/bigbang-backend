@@ -25,7 +25,7 @@ let ProductsController = class ProductsController {
         this.productsService = productsService;
     }
     async getProducts(query, res) {
-        const { shopID, shopName } = query;
+        const { shopID, shopName, customCategory } = query;
         if (!shopID || !shopName) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
@@ -33,10 +33,9 @@ let ProductsController = class ProductsController {
             });
         }
         try {
-            const products = await this.productsService.getProductsByShop(shopID, shopName);
+            const products = await this.productsService.getProductsByShop(shopID, shopName, customCategory);
             return res.status(common_1.HttpStatus.OK).json({
                 success: true,
-                message: '查询成功',
                 data: products,
             });
         }

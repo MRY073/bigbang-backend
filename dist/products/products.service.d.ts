@@ -5,7 +5,7 @@ export declare class ProductsService {
     private calculateChangeIndex;
     private calculateSlidingVolatility;
     private generateWarningMessage;
-    getProductsByShop(shopID: string, shopName: string): Promise<Array<{
+    getProductsByShop(shopID: string, shopName: string, customCategory?: string): Promise<Array<{
         product_id: string;
         product_name: string;
         product_image: string | null;
@@ -25,6 +25,11 @@ export declare class ProductsService {
             start_time: string | null;
             end_time: string | null;
         };
+        custom_category_1: string | null;
+        custom_category_2: string | null;
+        custom_category_3: string | null;
+        custom_category_4: string | null;
+        prompt_note: string | null;
     }>>;
     updateProductStage(productId: string, shopID: string, shopName: string, stageType: 'testing' | 'potential' | 'product' | 'abandoned', startTime?: string | null, endTime?: string | null): Promise<{
         success: boolean;
@@ -121,14 +126,17 @@ export declare class ProductsService {
             custom_category_2: string | null;
             custom_category_3: string | null;
             custom_category_4: string | null;
+            prompt_note: string | null;
         }>;
         total: number;
     }>;
+    private validatePromptNote;
     updateProductItemCustomCategory(id: string | number, updateData: {
         custom_category_1?: string | null;
         custom_category_2?: string | null;
         custom_category_3?: string | null;
         custom_category_4?: string | null;
+        prompt_note?: string | null;
     }): Promise<{
         id: number;
         product_id: string;
@@ -138,6 +146,29 @@ export declare class ProductsService {
         custom_category_2: string | null;
         custom_category_3: string | null;
         custom_category_4: string | null;
+        prompt_note: string | null;
     }>;
     deleteProductItem(id: string | number): Promise<boolean>;
+    getOfflineProducts(shopID: string, shopName: string, page?: number, pageSize?: number, customCategory?: string): Promise<{
+        data: Array<{
+            id: number;
+            product_id: string;
+            product_name: string;
+            product_image: string | null;
+            status: number | null;
+            custom_category_1: string | null;
+            custom_category_2: string | null;
+            custom_category_3: string | null;
+            custom_category_4: string | null;
+            prompt_note: string | null;
+        }>;
+        total: number;
+    }>;
+    updateProductStatus(id: string | number, status: 0 | 1): Promise<{
+        id: number;
+        product_id: string;
+        product_name: string;
+        product_image: string | null;
+        status: number | null;
+    }>;
 }

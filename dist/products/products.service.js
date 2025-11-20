@@ -220,7 +220,20 @@ let ProductsService = class ProductsService {
             return `🔴 ${metricName}${levelText}，趋势${directionText}，变化强度${strength.toFixed(2)}%，风险较高，建议及时处理`;
         }
     }
-    async getProductsByShop(shopID, shopName) {
+    async getProductsByShop(shopID, shopName, customCategory) {
+        let whereClause = 'WHERE shop_id = ?';
+        const queryParams = [shopID];
+        if (customCategory && customCategory.trim()) {
+            const trimmedCategory = customCategory.trim();
+            whereClause += ` AND (
+        (custom_category_1 IS NOT NULL AND LOWER(custom_category_1) LIKE ?) OR
+        (custom_category_2 IS NOT NULL AND LOWER(custom_category_2) LIKE ?) OR
+        (custom_category_3 IS NOT NULL AND LOWER(custom_category_3) LIKE ?) OR
+        (custom_category_4 IS NOT NULL AND LOWER(custom_category_4) LIKE ?)
+      )`;
+            const categoryPattern = `%${trimmedCategory.toLowerCase()}%`;
+            queryParams.push(categoryPattern, categoryPattern, categoryPattern, categoryPattern);
+        }
         const products = await this.mysqlService.query(`SELECT 
         product_id,
         product_name,
@@ -232,47 +245,67 @@ let ProductsService = class ProductsService {
         product_stage_start,
         product_stage_end,
         abandoned_stage_start,
-        abandoned_stage_end
+        abandoned_stage_end,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4,
+        prompt_note
       FROM product_items 
-      WHERE shop_id = ? 
-      ORDER BY id ASC`, [shopID]);
-        return products.map((product) => ({
-            product_id: product.product_id,
-            product_name: product.product_name,
-            product_image: product.product_image,
-            testing_stage: {
-                start_time: product.testing_stage_start
-                    ? new Date(product.testing_stage_start).toISOString()
-                    : null,
-                end_time: product.testing_stage_end
-                    ? new Date(product.testing_stage_end).toISOString()
-                    : null,
-            },
-            potential_stage: {
-                start_time: product.potential_stage_start
-                    ? new Date(product.potential_stage_start).toISOString()
-                    : null,
-                end_time: product.potential_stage_end
-                    ? new Date(product.potential_stage_end).toISOString()
-                    : null,
-            },
-            product_stage: {
-                start_time: product.product_stage_start
-                    ? new Date(product.product_stage_start).toISOString()
-                    : null,
-                end_time: product.product_stage_end
-                    ? new Date(product.product_stage_end).toISOString()
-                    : null,
-            },
-            abandoned_stage: {
-                start_time: product.abandoned_stage_start
-                    ? new Date(product.abandoned_stage_start).toISOString()
-                    : null,
-                end_time: product.abandoned_stage_end
-                    ? new Date(product.abandoned_stage_end).toISOString()
-                    : null,
-            },
-        }));
+      ${whereClause}
+        AND (status IS NULL OR status = 0)
+      ORDER BY id ASC`, queryParams);
+        return products.map((product) => {
+            const processCategory = (value) => {
+                if (value === null || value === undefined) {
+                    return null;
+                }
+                const trimmed = value.trim();
+                return trimmed === '' ? null : trimmed;
+            };
+            return {
+                product_id: product.product_id,
+                product_name: product.product_name,
+                product_image: product.product_image,
+                testing_stage: {
+                    start_time: product.testing_stage_start
+                        ? new Date(product.testing_stage_start).toISOString()
+                        : null,
+                    end_time: product.testing_stage_end
+                        ? new Date(product.testing_stage_end).toISOString()
+                        : null,
+                },
+                potential_stage: {
+                    start_time: product.potential_stage_start
+                        ? new Date(product.potential_stage_start).toISOString()
+                        : null,
+                    end_time: product.potential_stage_end
+                        ? new Date(product.potential_stage_end).toISOString()
+                        : null,
+                },
+                product_stage: {
+                    start_time: product.product_stage_start
+                        ? new Date(product.product_stage_start).toISOString()
+                        : null,
+                    end_time: product.product_stage_end
+                        ? new Date(product.product_stage_end).toISOString()
+                        : null,
+                },
+                abandoned_stage: {
+                    start_time: product.abandoned_stage_start
+                        ? new Date(product.abandoned_stage_start).toISOString()
+                        : null,
+                    end_time: product.abandoned_stage_end
+                        ? new Date(product.abandoned_stage_end).toISOString()
+                        : null,
+                },
+                custom_category_1: processCategory(product.custom_category_1),
+                custom_category_2: processCategory(product.custom_category_2),
+                custom_category_3: processCategory(product.custom_category_3),
+                custom_category_4: processCategory(product.custom_category_4),
+                prompt_note: product.prompt_note,
+            };
+        });
     }
     async updateProductStage(productId, shopID, shopName, stageType, startTime, endTime) {
         const existing = await this.mysqlService.queryOne('SELECT id FROM product_items WHERE shop_id = ? AND product_id = ?', [shopID, productId]);
@@ -351,6 +384,7 @@ let ProductsService = class ProductsService {
         AND testing_stage_start IS NOT NULL
         AND testing_stage_start <= ?
         AND (testing_stage_end IS NULL OR testing_stage_end >= ?)
+        AND (status IS NULL OR status = 0)
       ORDER BY id ASC`, [shopID, currentDate, currentDate]);
         console.log('查询到的测款商品数量:', testingProducts?.length || 0);
         if (testingProducts && testingProducts.length > 0) {
@@ -475,13 +509,13 @@ let ProductsService = class ProductsService {
     }
     async getCustomCategories(shopID) {
         const rawCategories = await this.mysqlService.query(`SELECT DISTINCT category FROM (
-        SELECT TRIM(custom_category_1) AS category FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_1) AS category FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
         UNION ALL
-        SELECT TRIM(custom_category_2) FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_2) FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
         UNION ALL
-        SELECT TRIM(custom_category_3) FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_3) FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
         UNION ALL
-        SELECT TRIM(custom_category_4) FROM product_items WHERE shop_id = ?
+        SELECT TRIM(custom_category_4) FROM product_items WHERE shop_id = ? AND (status IS NULL OR status = 0)
       ) AS categories
       WHERE category IS NOT NULL AND category <> ''`, [shopID, shopID, shopID, shopID]);
         const categoriesSet = new Set();
@@ -516,7 +550,8 @@ let ProductsService = class ProductsService {
         let whereClause = `WHERE shop_id = ? 
         AND product_stage_start IS NOT NULL
         AND product_stage_start <= ?
-        AND (product_stage_end IS NULL OR product_stage_end >= ?)`;
+        AND (product_stage_end IS NULL OR product_stage_end >= ?)
+        AND (status IS NULL OR status = 0)`;
         const queryParams = [shopID, currentDate, currentDate];
         if (customCategory && customCategory.trim()) {
             const trimmedCategory = customCategory.trim();
@@ -795,6 +830,7 @@ let ProductsService = class ProductsService {
         AND potential_stage_start IS NOT NULL
         AND potential_stage_start <= ?
         AND (potential_stage_end IS NULL OR potential_stage_end >= ?)
+        AND (status IS NULL OR status = 0)
       ORDER BY id ASC`, [shopID, currentDate, currentDate]);
         console.log('查询到的潜力商品数量:', potentialProducts?.length || 0);
         if (!potentialProducts || potentialProducts.length === 0) {
@@ -1154,7 +1190,7 @@ let ProductsService = class ProductsService {
         const validPageSize = Math.max(1, Math.min(100, Math.floor(Number(pageSize)) || 20));
         const offset = (validPage - 1) * validPageSize;
         const trimmedCategory = typeof customCategory === 'string' ? customCategory.trim() : undefined;
-        const whereConditions = ['shop_id = ?'];
+        const whereConditions = ['shop_id = ?', '(status IS NULL OR status = 0)'];
         const params = [shopID];
         if (trimmedCategory) {
             const likeValue = `%${trimmedCategory}%`;
@@ -1174,7 +1210,8 @@ let ProductsService = class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        prompt_note
       FROM product_items 
       ${whereClause} 
       ORDER BY id DESC 
@@ -1183,6 +1220,22 @@ let ProductsService = class ProductsService {
             data: products,
             total,
         };
+    }
+    validatePromptNote(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value !== 'string') {
+            throw new Error('prompt_note 必须是字符串类型');
+        }
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+            return null;
+        }
+        if (trimmed.length > 2000) {
+            throw new Error('prompt_note 不能超过 2000 个字符');
+        }
+        return trimmed;
     }
     async updateProductItemCustomCategory(id, updateData) {
         const product = await this.mysqlService.queryOne(`SELECT 
@@ -1193,7 +1246,8 @@ let ProductsService = class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        prompt_note
       FROM product_items 
       WHERE id = ? OR product_id = ? 
       LIMIT 1`, [id, id]);
@@ -1213,6 +1267,9 @@ let ProductsService = class ProductsService {
         if (updateData.custom_category_4 !== undefined) {
             updateFields.custom_category_4 = updateData.custom_category_4;
         }
+        if (updateData.prompt_note !== undefined) {
+            updateFields.prompt_note = this.validatePromptNote(updateData.prompt_note);
+        }
         if (Object.keys(updateFields).length === 0) {
             return product;
         }
@@ -1227,7 +1284,8 @@ let ProductsService = class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        prompt_note
       FROM product_items 
       WHERE id = ?`, [product.id]);
         if (!updatedProduct) {
@@ -1246,6 +1304,70 @@ let ProductsService = class ProductsService {
             id: product.id,
         });
         return affectedRows > 0;
+    }
+    async getOfflineProducts(shopID, shopName, page = 1, pageSize = 20, customCategory) {
+        const validPage = Math.max(1, Math.floor(Number(page)) || 1);
+        const validPageSize = Math.max(1, Math.min(100, Math.floor(Number(pageSize)) || 20));
+        const offset = (validPage - 1) * validPageSize;
+        const trimmedCategory = typeof customCategory === 'string' ? customCategory.trim() : undefined;
+        const whereConditions = ['shop_id = ?', 'status = 1'];
+        const params = [shopID];
+        if (trimmedCategory) {
+            const likeValue = `%${trimmedCategory}%`;
+            whereConditions.push(`(custom_category_1 LIKE ? OR custom_category_2 LIKE ? OR custom_category_3 LIKE ? OR custom_category_4 LIKE ?)`);
+            params.push(likeValue, likeValue, likeValue, likeValue);
+        }
+        const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+        const countResult = await this.mysqlService.queryOne(`SELECT COUNT(*) as total 
+       FROM product_items 
+       ${whereClause}`, [...params]);
+        const total = countResult?.total || 0;
+        const products = await this.mysqlService.query(`SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        status,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4,
+        prompt_note
+      FROM product_items 
+      ${whereClause} 
+      ORDER BY id DESC 
+      LIMIT ${validPageSize} OFFSET ${offset}`, [...params]);
+        return {
+            data: products,
+            total,
+        };
+    }
+    async updateProductStatus(id, status) {
+        const product = await this.mysqlService.queryOne(`SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        status
+      FROM product_items 
+      WHERE id = ? OR product_id = ? 
+      LIMIT 1`, [id, id]);
+        if (!product) {
+            throw new Error('商品不存在');
+        }
+        await this.mysqlService.update('product_items', { status }, { id: product.id });
+        const updatedProduct = await this.mysqlService.queryOne(`SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        status
+      FROM product_items 
+      WHERE id = ?`, [product.id]);
+        if (!updatedProduct) {
+            throw new Error('更新后无法获取商品数据');
+        }
+        return updatedProduct;
     }
 };
 exports.ProductsService = ProductsService;

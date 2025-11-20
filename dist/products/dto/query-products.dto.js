@@ -4,6 +4,7 @@ exports.QueryProductsDto = void 0;
 class QueryProductsDto {
     shopID;
     shopName;
+    customCategory;
 }
 exports.QueryProductsDto = QueryProductsDto;
 //# sourceMappingURL=query-products.dto.js.map
