@@ -3,34 +3,50 @@ export declare class AdAnalysisService {
     private readonly mysqlService;
     constructor(mysqlService: MysqlService);
     private getProductStageByDate;
-    getAdTrend30Days(shopID: string): Promise<Array<{
+    getAdTrend30Days(shopID: string, shopName?: string, customCategory?: string): Promise<Array<{
         date: string;
-        testing_stage_spend: number;
-        potential_stage_spend: number;
-        product_stage_spend: number;
-        abandoned_stage_spend: number;
-        no_stage_spend: number;
-        product_stage_roi: number;
+        product_stage_spend?: number;
+        testing_stage_spend?: number;
+        potential_stage_spend?: number;
+        abandoned_stage_spend?: number;
+        no_stage_spend?: number;
+        product_stage_sales?: number;
+        testing_stage_sales?: number;
+        potential_stage_sales?: number;
+        abandoned_stage_sales?: number;
+        no_stage_sales?: number;
+        product_stage_roi?: number;
+        testing_stage_roi?: number;
+        potential_stage_roi?: number;
+        abandoned_stage_roi?: number;
+        no_stage_roi?: number;
     }>>;
-    getAdRatioByDate(shopID: string, date: string): Promise<{
-        date: string;
+    getAdRatioByDate(shopID: string, date: string, shopName?: string, customCategory?: string): Promise<{
         stages: {
-            testing_stage: {
+            product_stage?: {
                 spend: number;
-            };
-            potential_stage: {
-                spend: number;
-            };
-            product_stage: {
-                spend: number;
-                sales_amount: number;
+                sales: number;
                 roi: number;
             };
-            abandoned_stage: {
+            testing_stage?: {
                 spend: number;
+                sales: number;
+                roi: number;
             };
-            no_stage: {
+            potential_stage?: {
                 spend: number;
+                sales: number;
+                roi: number;
+            };
+            abandoned_stage?: {
+                spend: number;
+                sales: number;
+                roi: number;
+            };
+            no_stage?: {
+                spend: number;
+                sales: number;
+                roi: number;
             };
         };
     }>;

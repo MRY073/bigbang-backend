@@ -1,1 +1,1 @@
-{"version":3,"file":"ad-trend.dto.js","sourceRoot":"","sources":["../../../src/ad-analysis/dto/ad-trend.dto.ts"],"names":[],"mappings":";;;AACA,MAAa,UAAU;IACrB,MAAM,CAAS;CAChB;AAFD,gCAEC"}
+{"version":3,"file":"ad-trend.dto.js","sourceRoot":"","sources":["../../../src/ad-analysis/dto/ad-trend.dto.ts"],"names":[],"mappings":";;;AACA,MAAa,UAAU;IACrB,MAAM,CAAS;IACf,QAAQ,CAAS;IACjB,cAAc,CAAU;CACzB;AAJD,gCAIC"}

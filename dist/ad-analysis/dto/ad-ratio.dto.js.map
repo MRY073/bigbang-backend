@@ -1,1 +1,1 @@
-{"version":3,"file":"ad-ratio.dto.js","sourceRoot":"","sources":["../../../src/ad-analysis/dto/ad-ratio.dto.ts"],"names":[],"mappings":";;;AACA,MAAa,UAAU;IACrB,MAAM,CAAS;IACf,IAAI,CAAS;CACd;AAHD,gCAGC"}
+{"version":3,"file":"ad-ratio.dto.js","sourceRoot":"","sources":["../../../src/ad-analysis/dto/ad-ratio.dto.ts"],"names":[],"mappings":";;;AACA,MAAa,UAAU;IACrB,MAAM,CAAS;IACf,IAAI,CAAS;IACb,QAAQ,CAAS;IACjB,cAAc,CAAU;CACzB;AALD,gCAKC"}

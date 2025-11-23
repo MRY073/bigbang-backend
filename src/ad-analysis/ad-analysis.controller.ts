@@ -13,21 +13,43 @@ export class AdAnalysisController {
 
   /**
    * 30天广告占比趋势
-   * GET /ad-analysis/ad-trend?shopID=店铺ID
+   * GET /ad-analysis/ad-trend?shopID=店铺ID&shopName=店铺名称&customCategory=自定义分类（可选）
    */
   @Get('ad-trend')
   async getAdTrend(@Query() query: AdTrendDto, @Res() res: Response) {
-    const { shopID } = query;
+    const { shopID, shopName, customCategory } = query;
 
     if (!shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
         message: 'shopID 参数不能为空',
+        error: 'shopID 参数不能为空',
+      });
+    }
+
+    if (!shopName) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'shopName 参数不能为空',
+        error: 'shopName 参数不能为空',
+      });
+    }
+
+    // 验证自定义分类参数（如果提供，不能为空字符串）
+    if (customCategory !== undefined && customCategory !== null && customCategory.trim() === '') {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'customCategory 参数不能为空字符串',
+        error: 'customCategory 参数不能为空字符串',
       });
     }
 
     try {
-      const data = await this.adAnalysisService.getAdTrend30Days(shopID);
+      const data = await this.adAnalysisService.getAdTrend30Days(
+        shopID,
+        shopName,
+        customCategory,
+      );
 
       return res.status(HttpStatus.OK).json({
         success: true,
@@ -45,11 +67,11 @@ export class AdAnalysisController {
 
   /**
    * 指定日期广告占比
-   * GET /ad-analysis/ad-ratio?shopID=店铺ID&date=日期
+   * GET /ad-analysis/ad-ratio?shopID=店铺ID&date=日期&shopName=店铺名称&customCategory=自定义分类（可选）
    */
   @Get('ad-ratio')
   async getAdRatio(@Query() query: AdRatioDto, @Res() res: Response) {
-    const { shopID, date } = query;
+    const { shopID, date, shopName, customCategory } = query;
 
     if (!shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
@@ -64,6 +86,14 @@ export class AdAnalysisController {
         success: false,
         error: 'date 参数不能为空',
         message: 'date 参数不能为空',
+      });
+    }
+
+    if (!shopName) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'shopName 参数不能为空',
+        message: 'shopName 参数不能为空',
       });
     }
 
@@ -87,8 +117,22 @@ export class AdAnalysisController {
       });
     }
 
+    // 验证自定义分类参数（如果提供，不能为空字符串）
+    if (customCategory !== undefined && customCategory !== null && customCategory.trim() === '') {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'customCategory 参数不能为空字符串',
+        message: 'customCategory 参数不能为空字符串',
+      });
+    }
+
     try {
-      const data = await this.adAnalysisService.getAdRatioByDate(shopID, date);
+      const data = await this.adAnalysisService.getAdRatioByDate(
+        shopID,
+        date,
+        shopName,
+        customCategory,
+      );
 
       return res.status(HttpStatus.OK).json({
         success: true,

@@ -25,15 +25,30 @@ let AdAnalysisController = class AdAnalysisController {
         this.adAnalysisService = adAnalysisService;
     }
     async getAdTrend(query, res) {
-        const { shopID } = query;
+        const { shopID, shopName, customCategory } = query;
         if (!shopID) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
                 message: 'shopID 参数不能为空',
+                error: 'shopID 参数不能为空',
+            });
+        }
+        if (!shopName) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                message: 'shopName 参数不能为空',
+                error: 'shopName 参数不能为空',
+            });
+        }
+        if (customCategory !== undefined && customCategory !== null && customCategory.trim() === '') {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                message: 'customCategory 参数不能为空字符串',
+                error: 'customCategory 参数不能为空字符串',
             });
         }
         try {
-            const data = await this.adAnalysisService.getAdTrend30Days(shopID);
+            const data = await this.adAnalysisService.getAdTrend30Days(shopID, shopName, customCategory);
             return res.status(common_1.HttpStatus.OK).json({
                 success: true,
                 message: '查询成功',
@@ -49,7 +64,7 @@ let AdAnalysisController = class AdAnalysisController {
         }
     }
     async getAdRatio(query, res) {
-        const { shopID, date } = query;
+        const { shopID, date, shopName, customCategory } = query;
         if (!shopID) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
@@ -62,6 +77,13 @@ let AdAnalysisController = class AdAnalysisController {
                 success: false,
                 error: 'date 参数不能为空',
                 message: 'date 参数不能为空',
+            });
+        }
+        if (!shopName) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: 'shopName 参数不能为空',
+                message: 'shopName 参数不能为空',
             });
         }
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -80,8 +102,15 @@ let AdAnalysisController = class AdAnalysisController {
                 message: '日期格式应为 YYYY-MM-DD',
             });
         }
+        if (customCategory !== undefined && customCategory !== null && customCategory.trim() === '') {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: 'customCategory 参数不能为空字符串',
+                message: 'customCategory 参数不能为空字符串',
+            });
+        }
         try {
-            const data = await this.adAnalysisService.getAdRatioByDate(shopID, date);
+            const data = await this.adAnalysisService.getAdRatioByDate(shopID, date, shopName, customCategory);
             return res.status(common_1.HttpStatus.OK).json({
                 success: true,
                 message: '查询成功',

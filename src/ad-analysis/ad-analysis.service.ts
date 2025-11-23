@@ -112,23 +112,44 @@ export class AdAnalysisService {
 
   /**
    * 30天广告占比趋势
-   * 计算近30天，每天的不同类型广告商品所属阶段的花费对比
+   * 计算近30天，每天的不同类型广告商品所属阶段的花费、销售额和ROI对比
    * @param shopID 店铺ID
+   * @param shopName 店铺名称（用于日志记录）
+   * @param customCategory 自定义分类筛选值（可选）
    * @returns 30天的趋势数据
    */
-  async getAdTrend30Days(shopID: string): Promise<
+  async getAdTrend30Days(
+    shopID: string,
+    shopName?: string,
+    customCategory?: string,
+  ): Promise<
     Array<{
       date: string; // 日期 YYYY-MM-DD
-      testing_stage_spend: number; // 测款阶段花费
-      potential_stage_spend: number; // 潜力阶段花费
-      product_stage_spend: number; // 成品阶段花费
-      abandoned_stage_spend: number; // 放弃阶段花费
-      no_stage_spend: number; // 无阶段花费
-      product_stage_roi: number; // 成品阶段 ROI
+      product_stage_spend?: number; // 成品阶段广告消耗
+      testing_stage_spend?: number; // 测款阶段广告消耗
+      potential_stage_spend?: number; // 潜力阶段广告消耗
+      abandoned_stage_spend?: number; // 放弃阶段广告消耗
+      no_stage_spend?: number; // 其他阶段广告消耗
+      product_stage_sales?: number; // 成品阶段广告销售额
+      testing_stage_sales?: number; // 测款阶段广告销售额
+      potential_stage_sales?: number; // 潜力阶段广告销售额
+      abandoned_stage_sales?: number; // 放弃阶段广告销售额
+      no_stage_sales?: number; // 其他阶段广告销售额
+      product_stage_roi?: number; // 成品阶段 ROI
+      testing_stage_roi?: number; // 测款阶段 ROI
+      potential_stage_roi?: number; // 潜力阶段 ROI
+      abandoned_stage_roi?: number; // 放弃阶段 ROI
+      no_stage_roi?: number; // 其他阶段 ROI
     }>
   > {
     console.log('=== getAdTrend30Days 函数开始执行 ===');
     console.log('接收到的店铺ID:', shopID);
+    if (shopName) {
+      console.log('接收到的店铺名称:', shopName);
+    }
+    if (customCategory) {
+      console.log('接收到的自定义分类:', customCategory);
+    }
 
     // 计算近30天的日期范围
     const endDate = new Date();
@@ -140,37 +161,114 @@ export class AdAnalysisService {
 
     console.log('查询日期范围:', startDateStr, '到', endDateStr);
 
-    // 1. 查询近30天的广告数据（包含花费和销售额）
-    console.log('\n--- 第一步：查询近30天的广告数据 ---');
-    const adStats = await this.mysqlService.query<{
-      product_id: string;
-      date: Date;
-      spend: number | null;
-      sales_amount: number | null;
-    }>(
-      `SELECT 
+    // 1. 如果提供了自定义分类，先查询符合条件的商品ID
+    let filteredProductIds: string[] | null = null;
+    if (customCategory && customCategory.trim()) {
+      console.log('\n--- 第一步：查询符合自定义分类的商品ID ---');
+      const trimmedCategory = customCategory.trim();
+      const products = await this.mysqlService.query<{
+        product_id: string;
+      }>(
+        `SELECT DISTINCT product_id
+        FROM product_items
+        WHERE shop_id = ?
+          AND (
+            custom_category_1 = ?
+            OR custom_category_2 = ?
+            OR custom_category_3 = ?
+            OR custom_category_4 = ?
+          )`,
+        [shopID, trimmedCategory, trimmedCategory, trimmedCategory, trimmedCategory],
+      );
+      filteredProductIds = products.map((p) => p.product_id);
+      console.log(`符合自定义分类的商品数量: ${filteredProductIds.length}`);
+    }
+
+    // 2. 查询近30天的广告数据（包含花费和销售额）
+    console.log('\n--- 第二步：查询近30天的广告数据 ---');
+    let adStatsQuery = `SELECT 
         product_id,
         date,
         COALESCE(spend, 0) as spend,
         COALESCE(sales_amount, 0) as sales_amount
       FROM ad_stats
-      WHERE shop_id = ? AND date >= ? AND date <= ?
-      ORDER BY date ASC, product_id ASC`,
-      [shopID, startDateStr, endDateStr],
-    );
+      WHERE shop_id = ? AND date >= ? AND date <= ?`;
+    const queryParams: Array<string | string[]> = [shopID, startDateStr, endDateStr];
+
+    if (filteredProductIds !== null && filteredProductIds.length > 0) {
+      adStatsQuery += ` AND product_id IN (${filteredProductIds.map(() => '?').join(',')})`;
+      queryParams.push(...filteredProductIds);
+    } else if (filteredProductIds !== null && filteredProductIds.length === 0) {
+      // 如果自定义分类筛选后没有符合条件的商品，返回30天的空数据
+      console.log('⚠️ 自定义分类筛选后没有符合条件的商品，返回空数据');
+      const emptyData: Array<{
+        date: string;
+        product_stage_spend: number;
+        testing_stage_spend: number;
+        potential_stage_spend: number;
+        abandoned_stage_spend: number;
+        no_stage_spend: number;
+        product_stage_sales: number;
+        testing_stage_sales: number;
+        potential_stage_sales: number;
+        abandoned_stage_sales: number;
+        no_stage_sales: number;
+        product_stage_roi: number;
+        testing_stage_roi: number;
+        potential_stage_roi: number;
+        abandoned_stage_roi: number;
+        no_stage_roi: number;
+      }> = [];
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + i);
+        emptyData.push({
+          date: date.toISOString().split('T')[0],
+          product_stage_spend: 0,
+          testing_stage_spend: 0,
+          potential_stage_spend: 0,
+          abandoned_stage_spend: 0,
+          no_stage_spend: 0,
+          product_stage_sales: 0,
+          testing_stage_sales: 0,
+          potential_stage_sales: 0,
+          abandoned_stage_sales: 0,
+          no_stage_sales: 0,
+          product_stage_roi: 0,
+          testing_stage_roi: 0,
+          potential_stage_roi: 0,
+          abandoned_stage_roi: 0,
+          no_stage_roi: 0,
+        });
+      }
+      return emptyData;
+    }
+
+    adStatsQuery += ' ORDER BY date ASC, product_id ASC';
+
+    const adStats = await this.mysqlService.query<{
+      product_id: string;
+      date: Date;
+      spend: number | null;
+      sales_amount: number | null;
+    }>(adStatsQuery, queryParams);
 
     console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
 
-    // 2. 生成30天的日期列表
+    // 3. 生成30天的日期列表
     const dateMap = new Map<
       string,
       {
+        product_stage_spend: number;
         testing_stage_spend: number;
         potential_stage_spend: number;
-        product_stage_spend: number;
         abandoned_stage_spend: number;
         no_stage_spend: number;
-        product_stage_sales: number; // 成品阶段销售额（用于计算ROI）
+        product_stage_sales: number;
+        testing_stage_sales: number;
+        potential_stage_sales: number;
+        abandoned_stage_sales: number;
+        no_stage_sales: number;
       }
     >();
 
@@ -179,45 +277,67 @@ export class AdAnalysisService {
       date.setDate(startDate.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
       dateMap.set(dateStr, {
+        product_stage_spend: 0,
         testing_stage_spend: 0,
         potential_stage_spend: 0,
-        product_stage_spend: 0,
         abandoned_stage_spend: 0,
         no_stage_spend: 0,
         product_stage_sales: 0,
+        testing_stage_sales: 0,
+        potential_stage_sales: 0,
+        abandoned_stage_sales: 0,
+        no_stage_sales: 0,
       });
     }
 
     if (!adStats || adStats.length === 0) {
       console.log('⚠️ 未找到广告数据，返回空数组');
-      // 返回30天的空数据（包含 product_stage_roi = 0）
+      // 返回30天的空数据
       const emptyData: Array<{
         date: string;
+        product_stage_spend: number;
         testing_stage_spend: number;
         potential_stage_spend: number;
-        product_stage_spend: number;
         abandoned_stage_spend: number;
         no_stage_spend: number;
+        product_stage_sales: number;
+        testing_stage_sales: number;
+        potential_stage_sales: number;
+        abandoned_stage_sales: number;
+        no_stage_sales: number;
         product_stage_roi: number;
+        testing_stage_roi: number;
+        potential_stage_roi: number;
+        abandoned_stage_roi: number;
+        no_stage_roi: number;
       }> = [];
       for (let i = 0; i < 30; i++) {
         const date = new Date(startDate);
         date.setDate(startDate.getDate() + i);
         emptyData.push({
           date: date.toISOString().split('T')[0],
+          product_stage_spend: 0,
           testing_stage_spend: 0,
           potential_stage_spend: 0,
-          product_stage_spend: 0,
           abandoned_stage_spend: 0,
           no_stage_spend: 0,
+          product_stage_sales: 0,
+          testing_stage_sales: 0,
+          potential_stage_sales: 0,
+          abandoned_stage_sales: 0,
+          no_stage_sales: 0,
           product_stage_roi: 0,
+          testing_stage_roi: 0,
+          potential_stage_roi: 0,
+          abandoned_stage_roi: 0,
+          no_stage_roi: 0,
         });
       }
       return emptyData;
     }
 
-    // 3. 对每条广告数据，判断商品阶段并累加花费和销售额
-    console.log('\n--- 第二步：判断商品阶段并统计花费和销售额 ---');
+    // 4. 对每条广告数据，判断商品阶段并累加花费和销售额
+    console.log('\n--- 第三步：判断商品阶段并统计花费和销售额 ---');
     console.log(`开始处理 ${adStats.length} 条广告数据`);
 
     for (const ad of adStats) {
@@ -227,8 +347,6 @@ export class AdAnalysisService {
           : new Date(ad.date).toISOString().split('T')[0];
       const spend = Number(ad.spend) || 0;
       const sales = Number(ad.sales_amount) || 0;
-
-      if (spend <= 0) continue; // 跳过花费为0或null的数据
 
       const stage = await this.getProductStageByDate(
         ad.product_id,
@@ -240,40 +358,67 @@ export class AdAnalysisService {
       if (dayData) {
         if (stage === 'testing') {
           dayData.testing_stage_spend += spend;
+          dayData.testing_stage_sales += sales;
         } else if (stage === 'potential') {
           dayData.potential_stage_spend += spend;
+          dayData.potential_stage_sales += sales;
         } else if (stage === 'product') {
           dayData.product_stage_spend += spend;
-          dayData.product_stage_sales += sales; // 累加成品阶段销售额
+          dayData.product_stage_sales += sales;
         } else if (stage === 'abandoned') {
           dayData.abandoned_stage_spend += spend;
+          dayData.abandoned_stage_sales += sales;
         } else {
           dayData.no_stage_spend += spend;
+          dayData.no_stage_sales += sales;
         }
       }
     }
 
-    // 4. 计算每日成品阶段 ROI 并转换为数组格式
+    // 5. 计算每日各阶段的ROI并转换为数组格式
     const result = Array.from(dateMap.entries())
       .map(([date, data]) => {
-        // 计算 ROI：销售额 / 广告消耗
-        let productStageRoi = 0;
-        if (data.product_stage_spend > 0) {
-          productStageRoi = data.product_stage_sales / data.product_stage_spend;
-        }
-        // 保留2位小数
-        productStageRoi = Math.round(productStageRoi * 100) / 100;
+        // 计算各阶段的ROI：销售额 / 广告消耗
+        const calculateRoi = (spend: number, sales: number): number => {
+          if (spend > 0) {
+            return Math.round((sales / spend) * 100) / 100;
+          }
+          return 0;
+        };
 
         return {
           date,
+          product_stage_spend: Math.round(data.product_stage_spend * 100) / 100,
           testing_stage_spend: Math.round(data.testing_stage_spend * 100) / 100,
           potential_stage_spend:
             Math.round(data.potential_stage_spend * 100) / 100,
-          product_stage_spend: Math.round(data.product_stage_spend * 100) / 100,
           abandoned_stage_spend:
             Math.round(data.abandoned_stage_spend * 100) / 100,
           no_stage_spend: Math.round(data.no_stage_spend * 100) / 100,
-          product_stage_roi: productStageRoi,
+          product_stage_sales: Math.round(data.product_stage_sales * 100) / 100,
+          testing_stage_sales: Math.round(data.testing_stage_sales * 100) / 100,
+          potential_stage_sales:
+            Math.round(data.potential_stage_sales * 100) / 100,
+          abandoned_stage_sales:
+            Math.round(data.abandoned_stage_sales * 100) / 100,
+          no_stage_sales: Math.round(data.no_stage_sales * 100) / 100,
+          product_stage_roi: calculateRoi(
+            data.product_stage_spend,
+            data.product_stage_sales,
+          ),
+          testing_stage_roi: calculateRoi(
+            data.testing_stage_spend,
+            data.testing_stage_sales,
+          ),
+          potential_stage_roi: calculateRoi(
+            data.potential_stage_spend,
+            data.potential_stage_sales,
+          ),
+          abandoned_stage_roi: calculateRoi(
+            data.abandoned_stage_spend,
+            data.abandoned_stage_sales,
+          ),
+          no_stage_roi: calculateRoi(data.no_stage_spend, data.no_stage_sales),
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -283,7 +428,7 @@ export class AdAnalysisService {
     console.log('最终返回结果（前5天示例）:');
     result.slice(0, 5).forEach((item) => {
       console.log(
-        `  ${item.date}: 测款=${item.testing_stage_spend}, 潜力=${item.potential_stage_spend}, 成品=${item.product_stage_spend}, 放弃=${item.abandoned_stage_spend}, 无阶段=${item.no_stage_spend}, ROI=${item.product_stage_roi}`,
+        `  ${item.date}: 成品(花费=${item.product_stage_spend}, 销售额=${item.product_stage_sales}, ROI=${item.product_stage_roi}), 测款(花费=${item.testing_stage_spend}, 销售额=${item.testing_stage_sales}, ROI=${item.testing_stage_roi}), 潜力(花费=${item.potential_stage_spend}, 销售额=${item.potential_stage_sales}, ROI=${item.potential_stage_roi}), 放弃(花费=${item.abandoned_stage_spend}, 销售额=${item.abandoned_stage_sales}, ROI=${item.abandoned_stage_roi}), 无阶段(花费=${item.no_stage_spend}, 销售额=${item.no_stage_sales}, ROI=${item.no_stage_roi})`,
       );
     });
     console.log('==========================================\n');
@@ -293,32 +438,56 @@ export class AdAnalysisService {
 
   /**
    * 指定日期广告占比
-   * 获取当天的不同阶段商品的广告花费
-   * 只计算成品阶段商品的广告花费和产出，以及成品阶段合计的ROI
+   * 获取当天的不同阶段商品的广告花费、销售额和ROI
    * @param shopID 店铺ID
    * @param date 日期（YYYY-MM-DD 格式）
+   * @param shopName 店铺名称（用于日志记录）
+   * @param customCategory 自定义分类筛选值（可选）
    * @returns 指定日期的广告占比数据
    */
   async getAdRatioByDate(
     shopID: string,
     date: string,
+    shopName?: string,
+    customCategory?: string,
   ): Promise<{
-    date: string;
     stages: {
-      testing_stage: { spend: number };
-      potential_stage: { spend: number };
-      product_stage: {
+      product_stage?: {
         spend: number;
-        sales_amount: number; // 产出（销售额）
-        roi: number; // ROI（广告支出回报率）
+        sales: number;
+        roi: number;
       };
-      abandoned_stage: { spend: number };
-      no_stage: { spend: number };
+      testing_stage?: {
+        spend: number;
+        sales: number;
+        roi: number;
+      };
+      potential_stage?: {
+        spend: number;
+        sales: number;
+        roi: number;
+      };
+      abandoned_stage?: {
+        spend: number;
+        sales: number;
+        roi: number;
+      };
+      no_stage?: {
+        spend: number;
+        sales: number;
+        roi: number;
+      };
     };
   }> {
     console.log('=== getAdRatioByDate 函数开始执行 ===');
     console.log('接收到的店铺ID:', shopID);
     console.log('接收到的日期:', date);
+    if (shopName) {
+      console.log('接收到的店铺名称:', shopName);
+    }
+    if (customCategory) {
+      console.log('接收到的自定义分类:', customCategory);
+    }
 
     // 验证日期格式
     const targetDate = new Date(date);
@@ -329,56 +498,90 @@ export class AdAnalysisService {
     const dateStr = targetDate.toISOString().split('T')[0];
     console.log('解析后的日期:', dateStr);
 
-    // 1. 查询指定日期的广告数据
-    console.log('\n--- 第一步：查询指定日期的广告数据 ---');
+    // 1. 如果提供了自定义分类，先查询符合条件的商品ID
+    let filteredProductIds: string[] | null = null;
+    if (customCategory && customCategory.trim()) {
+      console.log('\n--- 第一步：查询符合自定义分类的商品ID ---');
+      const trimmedCategory = customCategory.trim();
+      const products = await this.mysqlService.query<{
+        product_id: string;
+      }>(
+        `SELECT DISTINCT product_id
+        FROM product_items
+        WHERE shop_id = ?
+          AND (
+            custom_category_1 = ?
+            OR custom_category_2 = ?
+            OR custom_category_3 = ?
+            OR custom_category_4 = ?
+          )`,
+        [shopID, trimmedCategory, trimmedCategory, trimmedCategory, trimmedCategory],
+      );
+      filteredProductIds = products.map((p) => p.product_id);
+      console.log(`符合自定义分类的商品数量: ${filteredProductIds.length}`);
+    }
+
+    // 2. 查询指定日期的广告数据
+    console.log('\n--- 第二步：查询指定日期的广告数据 ---');
+    let adStatsQuery = `SELECT 
+        product_id,
+        COALESCE(spend, 0) as spend,
+        COALESCE(sales_amount, 0) as sales_amount
+      FROM ad_stats
+      WHERE shop_id = ? AND date = ?`;
+    const queryParams: Array<string | string[]> = [shopID, dateStr];
+
+    if (filteredProductIds !== null && filteredProductIds.length > 0) {
+      adStatsQuery += ` AND product_id IN (${filteredProductIds.map(() => '?').join(',')})`;
+      queryParams.push(...filteredProductIds);
+    } else if (filteredProductIds !== null && filteredProductIds.length === 0) {
+      // 如果自定义分类筛选后没有符合条件的商品，返回空数据
+      console.log('⚠️ 自定义分类筛选后没有符合条件的商品，返回空数据');
+      return {
+        stages: {
+          product_stage: { spend: 0, sales: 0, roi: 0 },
+          testing_stage: { spend: 0, sales: 0, roi: 0 },
+          potential_stage: { spend: 0, sales: 0, roi: 0 },
+          abandoned_stage: { spend: 0, sales: 0, roi: 0 },
+          no_stage: { spend: 0, sales: 0, roi: 0 },
+        },
+      };
+    }
+
+    adStatsQuery += ' ORDER BY product_id ASC';
+
     const adStats = await this.mysqlService.query<{
       product_id: string;
       spend: number | null;
       sales_amount: number | null;
-      roas: number | null;
-    }>(
-      `SELECT 
-        product_id,
-        COALESCE(spend, 0) as spend,
-        COALESCE(sales_amount, 0) as sales_amount,
-        COALESCE(roas, 0) as roas
-      FROM ad_stats
-      WHERE shop_id = ? AND date = ?
-      ORDER BY product_id ASC`,
-      [shopID, dateStr],
-    );
+    }>(adStatsQuery, queryParams);
 
     console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
 
     // 初始化各阶段数据
     const stageData = {
-      testing_stage: { spend: 0 },
-      potential_stage: { spend: 0 },
-      product_stage: {
-        spend: 0,
-        sales_amount: 0,
-        roi: 0,
-      },
-      abandoned_stage: { spend: 0 },
-      no_stage: { spend: 0 },
+      product_stage: { spend: 0, sales: 0, roi: 0 },
+      testing_stage: { spend: 0, sales: 0, roi: 0 },
+      potential_stage: { spend: 0, sales: 0, roi: 0 },
+      abandoned_stage: { spend: 0, sales: 0, roi: 0 },
+      no_stage: { spend: 0, sales: 0, roi: 0 },
     };
 
     if (!adStats || adStats.length === 0) {
       console.log('⚠️ 未找到广告数据，返回空数据');
       console.log('=== getAdRatioByDate 函数执行完成（无数据）===\n');
       return {
-        date: dateStr,
         stages: stageData,
       };
     }
 
-    // 2. 对每条广告数据，判断商品阶段并累加花费和销售额
-    console.log('\n--- 第二步：判断商品阶段并统计花费和销售额 ---');
+    // 3. 对每条广告数据，判断商品阶段并累加花费和销售额
+    console.log('\n--- 第三步：判断商品阶段并统计花费和销售额 ---');
     console.log(`开始处理 ${adStats.length} 条广告数据`);
 
     for (const ad of adStats) {
       const spend = Number(ad.spend) || 0;
-      if (spend <= 0) continue; // 跳过花费为0的数据
+      const sales = Number(ad.sales_amount) || 0;
 
       const stage = await this.getProductStageByDate(
         ad.product_id,
@@ -387,64 +590,70 @@ export class AdAnalysisService {
       );
 
       console.log(
-        `商品 ${ad.product_id}: 阶段=${stage || '无'}, 花费=${spend}`,
+        `商品 ${ad.product_id}: 阶段=${stage || '无'}, 花费=${spend}, 销售额=${sales}`,
       );
 
       if (stage === 'testing') {
         stageData.testing_stage.spend += spend;
+        stageData.testing_stage.sales += sales;
       } else if (stage === 'potential') {
         stageData.potential_stage.spend += spend;
+        stageData.potential_stage.sales += sales;
       } else if (stage === 'product') {
         stageData.product_stage.spend += spend;
-        const sales = Number(ad.sales_amount) || 0;
-        stageData.product_stage.sales_amount += sales;
+        stageData.product_stage.sales += sales;
       } else if (stage === 'abandoned') {
         stageData.abandoned_stage.spend += spend;
+        stageData.abandoned_stage.sales += sales;
       } else {
         stageData.no_stage.spend += spend;
+        stageData.no_stage.sales += sales;
       }
     }
 
-    // 3. 计算成品阶段的合计ROI：ROI = 销售额 / 广告消耗
-    console.log('\n--- 第三步：计算成品阶段的合计ROI ---');
-    if (stageData.product_stage.spend > 0) {
-      stageData.product_stage.roi =
-        stageData.product_stage.sales_amount / stageData.product_stage.spend;
-    } else {
-      stageData.product_stage.roi = 0;
+    // 4. 计算各阶段的ROI：ROI = 销售额 / 广告消耗
+    console.log('\n--- 第四步：计算各阶段的ROI ---');
+    const stages = ['product_stage', 'testing_stage', 'potential_stage', 'abandoned_stage', 'no_stage'] as const;
+    for (const stageKey of stages) {
+      const stage = stageData[stageKey];
+      if (stage.spend > 0) {
+        stage.roi = stage.sales / stage.spend;
+      } else {
+        stage.roi = 0;
+      }
+      // 保留2位小数
+      stage.spend = Math.round(stage.spend * 100) / 100;
+      stage.sales = Math.round(stage.sales * 100) / 100;
+      stage.roi = Math.round(stage.roi * 100) / 100;
     }
 
-    // 4. 保留2位小数
-    stageData.testing_stage.spend =
-      Math.round(stageData.testing_stage.spend * 100) / 100;
-    stageData.potential_stage.spend =
-      Math.round(stageData.potential_stage.spend * 100) / 100;
-    stageData.product_stage.spend =
-      Math.round(stageData.product_stage.spend * 100) / 100;
-    stageData.product_stage.sales_amount =
-      Math.round(stageData.product_stage.sales_amount * 100) / 100;
-    stageData.product_stage.roi =
-      Math.round(stageData.product_stage.roi * 100) / 100;
-    stageData.abandoned_stage.spend =
-      Math.round(stageData.abandoned_stage.spend * 100) / 100;
-    stageData.no_stage.spend = Math.round(stageData.no_stage.spend * 100) / 100;
+    // 5. 构建返回结果（只返回有数据的阶段）
+    const result: {
+      stages: {
+        product_stage?: { spend: number; sales: number; roi: number };
+        testing_stage?: { spend: number; sales: number; roi: number };
+        potential_stage?: { spend: number; sales: number; roi: number };
+        abandoned_stage?: { spend: number; sales: number; roi: number };
+        no_stage?: { spend: number; sales: number; roi: number };
+      };
+    } = {
+      stages: {},
+    };
 
-    console.log('成品阶段统计:');
-    console.log(`  花费: ${stageData.product_stage.spend}`);
-    console.log(`  产出（销售额）: ${stageData.product_stage.sales_amount}`);
-    console.log(`  ROI: ${stageData.product_stage.roi}`);
+    // 即使数据为0，也返回所有阶段（根据需求文档）
+    result.stages = {
+      product_stage: stageData.product_stage,
+      testing_stage: stageData.testing_stage,
+      potential_stage: stageData.potential_stage,
+      abandoned_stage: stageData.abandoned_stage,
+      no_stage: stageData.no_stage,
+    };
 
     console.log('\n=== getAdRatioByDate 函数执行完成 ===');
-    console.log('最终返回结果:', {
-      date: dateStr,
-      stages: stageData,
-    });
+    console.log('最终返回结果:', result);
     console.log('==========================================\n');
 
-    return {
-      date: dateStr,
-      stages: stageData,
-    };
+    return result;
   }
 
   /**
