@@ -250,7 +250,9 @@ let ProductsService = class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       ${whereClause}
         AND (status IS NULL OR status = 0)
@@ -304,6 +306,8 @@ let ProductsService = class ProductsService {
                 custom_category_3: processCategory(product.custom_category_3),
                 custom_category_4: processCategory(product.custom_category_4),
                 prompt_note: product.prompt_note,
+                competitor_link: product.competitor_link,
+                competitor_daily_sales: product.competitor_daily_sales,
             };
         });
     }
@@ -1211,7 +1215,9 @@ let ProductsService = class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       ${whereClause} 
       ORDER BY id DESC 
@@ -1247,7 +1253,9 @@ let ProductsService = class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       WHERE id = ? OR product_id = ? 
       LIMIT 1`, [id, id]);
@@ -1270,6 +1278,16 @@ let ProductsService = class ProductsService {
         if (updateData.prompt_note !== undefined) {
             updateFields.prompt_note = this.validatePromptNote(updateData.prompt_note);
         }
+        if (updateData.competitor_link !== undefined) {
+            updateFields.competitor_link = updateData.competitor_link === null || updateData.competitor_link === ''
+                ? null
+                : updateData.competitor_link.trim();
+        }
+        if (updateData.competitor_daily_sales !== undefined) {
+            updateFields.competitor_daily_sales = updateData.competitor_daily_sales === null || updateData.competitor_daily_sales === ''
+                ? null
+                : updateData.competitor_daily_sales.trim();
+        }
         if (Object.keys(updateFields).length === 0) {
             return product;
         }
@@ -1285,7 +1303,54 @@ let ProductsService = class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
+      FROM product_items 
+      WHERE id = ?`, [product.id]);
+        if (!updatedProduct) {
+            throw new Error('更新后无法获取商品数据');
+        }
+        return updatedProduct;
+    }
+    async updateProductCompetitorInfo(id, updateData) {
+        const product = await this.mysqlService.queryOne(`SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        competitor_link,
+        competitor_daily_sales
+      FROM product_items 
+      WHERE id = ? OR product_id = ? 
+      LIMIT 1`, [id, id]);
+        if (!product) {
+            throw new Error('商品不存在');
+        }
+        const updateFields = {};
+        if (updateData.competitor_link !== undefined) {
+            updateFields.competitor_link = updateData.competitor_link === null || updateData.competitor_link === ''
+                ? null
+                : updateData.competitor_link.trim();
+        }
+        if (updateData.competitor_daily_sales !== undefined) {
+            updateFields.competitor_daily_sales = updateData.competitor_daily_sales === null || updateData.competitor_daily_sales === ''
+                ? null
+                : updateData.competitor_daily_sales.trim();
+        }
+        if (Object.keys(updateFields).length === 0) {
+            return product;
+        }
+        await this.mysqlService.update('product_items', updateFields, {
+            id: product.id,
+        });
+        const updatedProduct = await this.mysqlService.queryOne(`SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       WHERE id = ?`, [product.id]);
         if (!updatedProduct) {
@@ -1332,7 +1397,9 @@ let ProductsService = class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       ${whereClause} 
       ORDER BY id DESC 

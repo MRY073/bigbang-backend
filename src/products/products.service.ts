@@ -359,6 +359,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>
   > {
     // 构建 WHERE 子句
@@ -396,6 +398,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>(
       `SELECT 
         product_id,
@@ -413,7 +417,9 @@ export class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       ${whereClause}
         AND (status IS NULL OR status = 0)
@@ -473,6 +479,8 @@ export class ProductsService {
         custom_category_3: processCategory(product.custom_category_3),
         custom_category_4: processCategory(product.custom_category_4),
         prompt_note: product.prompt_note,
+        competitor_link: product.competitor_link,
+        competitor_daily_sales: product.competitor_daily_sales,
       };
     });
   }
@@ -2207,6 +2215,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>;
     total: number;
   }> {
@@ -2256,6 +2266,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>(
       `SELECT 
         id,
@@ -2266,7 +2278,9 @@ export class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       ${whereClause} 
       ORDER BY id DESC 
@@ -2322,6 +2336,8 @@ export class ProductsService {
       custom_category_3?: string | null;
       custom_category_4?: string | null;
       prompt_note?: string | null;
+      competitor_link?: string | null;
+      competitor_daily_sales?: string | null;
     },
   ): Promise<{
     id: number;
@@ -2333,6 +2349,8 @@ export class ProductsService {
     custom_category_3: string | null;
     custom_category_4: string | null;
     prompt_note: string | null;
+    competitor_link: string | null;
+    competitor_daily_sales: string | null;
   }> {
     // 先查找商品（支持通过主键id或product_id查找）
     const product = await this.mysqlService.queryOne<{
@@ -2345,6 +2363,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>(
       `SELECT 
         id,
@@ -2355,7 +2375,9 @@ export class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       WHERE id = ? OR product_id = ? 
       LIMIT 1`,
@@ -2383,6 +2405,16 @@ export class ProductsService {
     if (updateData.prompt_note !== undefined) {
       updateFields.prompt_note = this.validatePromptNote(updateData.prompt_note);
     }
+    if (updateData.competitor_link !== undefined) {
+      updateFields.competitor_link = updateData.competitor_link === null || updateData.competitor_link === '' 
+        ? null 
+        : updateData.competitor_link.trim();
+    }
+    if (updateData.competitor_daily_sales !== undefined) {
+      updateFields.competitor_daily_sales = updateData.competitor_daily_sales === null || updateData.competitor_daily_sales === '' 
+        ? null 
+        : updateData.competitor_daily_sales.trim();
+    }
 
     // 如果没有要更新的字段，直接返回原数据
     if (Object.keys(updateFields).length === 0) {
@@ -2405,6 +2437,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>(
       `SELECT 
         id,
@@ -2415,7 +2449,106 @@ export class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
+      FROM product_items 
+      WHERE id = ?`,
+      [product.id],
+    );
+
+    if (!updatedProduct) {
+      throw new Error('更新后无法获取商品数据');
+    }
+
+    return updatedProduct;
+  }
+
+  /**
+   * 更新商品竞争对手信息
+   * @param id 商品ID（可以是主键id或product_id）
+   * @param updateData 更新的竞争对手数据
+   * @returns 更新后的商品数据
+   */
+  async updateProductCompetitorInfo(
+    id: string | number,
+    updateData: {
+      competitor_link?: string | null;
+      competitor_daily_sales?: string | null;
+    },
+  ): Promise<{
+    id: number;
+    product_id: string;
+    product_name: string;
+    product_image: string | null;
+    competitor_link: string | null;
+    competitor_daily_sales: string | null;
+  }> {
+    // 先查找商品（支持通过主键id或product_id查找）
+    const product = await this.mysqlService.queryOne<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        competitor_link,
+        competitor_daily_sales
+      FROM product_items 
+      WHERE id = ? OR product_id = ? 
+      LIMIT 1`,
+      [id, id],
+    );
+
+    if (!product) {
+      throw new Error('商品不存在');
+    }
+
+    // 构建更新数据（只更新提供的字段）
+    const updateFields: Record<string, string | null> = {};
+    if (updateData.competitor_link !== undefined) {
+      updateFields.competitor_link = updateData.competitor_link === null || updateData.competitor_link === '' 
+        ? null 
+        : updateData.competitor_link.trim();
+    }
+    if (updateData.competitor_daily_sales !== undefined) {
+      updateFields.competitor_daily_sales = updateData.competitor_daily_sales === null || updateData.competitor_daily_sales === '' 
+        ? null 
+        : updateData.competitor_daily_sales.trim();
+    }
+
+    // 如果没有要更新的字段，直接返回原数据
+    if (Object.keys(updateFields).length === 0) {
+      return product;
+    }
+
+    // 执行更新
+    await this.mysqlService.update('product_items', updateFields, {
+      id: product.id,
+    });
+
+    // 查询更新后的数据
+    const updatedProduct = await this.mysqlService.queryOne<{
+      id: number;
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
+    }>(
+      `SELECT 
+        id,
+        product_id,
+        product_name,
+        product_image,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       WHERE id = ?`,
       [product.id],
@@ -2481,6 +2614,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>;
     total: number;
   }> {
@@ -2529,6 +2664,8 @@ export class ProductsService {
       custom_category_3: string | null;
       custom_category_4: string | null;
       prompt_note: string | null;
+      competitor_link: string | null;
+      competitor_daily_sales: string | null;
     }>(
       `SELECT 
         id,
@@ -2540,7 +2677,9 @@ export class ProductsService {
         custom_category_2,
         custom_category_3,
         custom_category_4,
-        prompt_note
+        prompt_note,
+        competitor_link,
+        competitor_daily_sales
       FROM product_items 
       ${whereClause} 
       ORDER BY id DESC 

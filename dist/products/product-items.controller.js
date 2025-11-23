@@ -18,6 +18,7 @@ const products_service_1 = require("./products.service");
 const query_product_items_dto_1 = require("./dto/query-product-items.dto");
 const update_custom_category_dto_1 = require("./dto/update-custom-category.dto");
 const update_product_status_dto_1 = require("./dto/update-product-status.dto");
+const update_competitor_info_dto_1 = require("./dto/update-competitor-info.dto");
 const auth_guard_1 = require("../auth/auth.guard");
 let ProductItemsController = class ProductItemsController {
     productsService;
@@ -210,6 +211,33 @@ let ProductItemsController = class ProductItemsController {
             });
         }
     }
+    async updateCompetitorInfo(id, body, res) {
+        try {
+            const updatedProduct = await this.productsService.updateProductCompetitorInfo(id, body);
+            return res.status(common_1.HttpStatus.OK).json({
+                success: true,
+                message: '竞争对手信息更新成功',
+                data: updatedProduct,
+            });
+        }
+        catch (error) {
+            const safeMessage = error instanceof Error ? error.message : String(error);
+            console.error('更新竞争对手信息失败:', safeMessage);
+            const errorMessage = safeMessage || '更新竞争对手信息失败';
+            if (errorMessage.includes('商品不存在')) {
+                return res.status(common_1.HttpStatus.NOT_FOUND).json({
+                    success: false,
+                    error: '商品不存在',
+                    message: '无法找到指定的商品',
+                });
+            }
+            return res.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json({
+                success: false,
+                error: '服务器错误',
+                message: errorMessage,
+            });
+        }
+    }
 };
 exports.ProductItemsController = ProductItemsController;
 __decorate([
@@ -262,6 +290,15 @@ __decorate([
     __metadata("design:paramtypes", [String, update_product_status_dto_1.UpdateProductStatusDto, Object]),
     __metadata("design:returntype", Promise)
 ], ProductItemsController.prototype, "updateProductStatus", null);
+__decorate([
+    (0, common_1.Put)(':id/competitor-info'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, update_competitor_info_dto_1.UpdateCompetitorInfoDto, Object]),
+    __metadata("design:returntype", Promise)
+], ProductItemsController.prototype, "updateCompetitorInfo", null);
 exports.ProductItemsController = ProductItemsController = __decorate([
     (0, common_1.Controller)('product-items'),
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),

@@ -30,6 +30,8 @@ export declare class ProductsService {
         custom_category_3: string | null;
         custom_category_4: string | null;
         prompt_note: string | null;
+        competitor_link: string | null;
+        competitor_daily_sales: string | null;
     }>>;
     updateProductStage(productId: string, shopID: string, shopName: string, stageType: 'testing' | 'potential' | 'product' | 'abandoned', startTime?: string | null, endTime?: string | null): Promise<{
         success: boolean;
@@ -127,6 +129,8 @@ export declare class ProductsService {
             custom_category_3: string | null;
             custom_category_4: string | null;
             prompt_note: string | null;
+            competitor_link: string | null;
+            competitor_daily_sales: string | null;
         }>;
         total: number;
     }>;
@@ -137,6 +141,8 @@ export declare class ProductsService {
         custom_category_3?: string | null;
         custom_category_4?: string | null;
         prompt_note?: string | null;
+        competitor_link?: string | null;
+        competitor_daily_sales?: string | null;
     }): Promise<{
         id: number;
         product_id: string;
@@ -147,6 +153,19 @@ export declare class ProductsService {
         custom_category_3: string | null;
         custom_category_4: string | null;
         prompt_note: string | null;
+        competitor_link: string | null;
+        competitor_daily_sales: string | null;
+    }>;
+    updateProductCompetitorInfo(id: string | number, updateData: {
+        competitor_link?: string | null;
+        competitor_daily_sales?: string | null;
+    }): Promise<{
+        id: number;
+        product_id: string;
+        product_name: string;
+        product_image: string | null;
+        competitor_link: string | null;
+        competitor_daily_sales: string | null;
     }>;
     deleteProductItem(id: string | number): Promise<boolean>;
     getOfflineProducts(shopID: string, shopName: string, page?: number, pageSize?: number, customCategory?: string): Promise<{
@@ -161,6 +180,8 @@ export declare class ProductsService {
             custom_category_3: string | null;
             custom_category_4: string | null;
             prompt_note: string | null;
+            competitor_link: string | null;
+            competitor_daily_sales: string | null;
         }>;
         total: number;
     }>;

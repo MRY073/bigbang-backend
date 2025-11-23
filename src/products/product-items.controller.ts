@@ -15,6 +15,7 @@ import { ProductsService } from './products.service';
 import { QueryProductItemsDto } from './dto/query-product-items.dto';
 import { UpdateCustomCategoryDto } from './dto/update-custom-category.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
+import { UpdateCompetitorInfoDto } from './dto/update-competitor-info.dto';
 import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('product-items')
@@ -93,6 +94,8 @@ export class ProductItemsController {
           custom_category_3: string | null;
           custom_category_4: string | null;
           prompt_note: string | null;
+          competitor_link: string | null;
+          competitor_daily_sales: string | null;
         }>;
         total: number;
       } = await this.productsService.getProductItems(
@@ -142,6 +145,8 @@ export class ProductItemsController {
         custom_category_3: string | null;
         custom_category_4: string | null;
         prompt_note: string | null;
+        competitor_link: string | null;
+        competitor_daily_sales: string | null;
       } = await this.productsService.updateProductItemCustomCategory(id, body);
 
       return res.status(HttpStatus.OK).json({
@@ -262,6 +267,8 @@ export class ProductItemsController {
           custom_category_3: string | null;
           custom_category_4: string | null;
           prompt_note: string | null;
+          competitor_link: string | null;
+          competitor_daily_sales: string | null;
         }>;
         total: number;
       } = await this.productsService.getOfflineProducts(
@@ -330,6 +337,54 @@ export class ProductItemsController {
         error instanceof Error ? error.message : String(error);
       console.error('更新商品状态失败:', safeMessage);
       const errorMessage = safeMessage || '更新商品状态失败';
+
+      // 如果是商品不存在的错误，返回404
+      if (errorMessage.includes('商品不存在')) {
+        return res.status(HttpStatus.NOT_FOUND).json({
+          success: false,
+          error: '商品不存在',
+          message: '无法找到指定的商品',
+        });
+      }
+
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: '服务器错误',
+        message: errorMessage,
+      });
+    }
+  }
+
+  /**
+   * 更新商品竞争对手信息接口
+   * PUT /product-items/:id/competitor-info
+   */
+  @Put(':id/competitor-info')
+  async updateCompetitorInfo(
+    @Param('id') id: string,
+    @Body() body: UpdateCompetitorInfoDto,
+    @Res() res: Response,
+  ) {
+    try {
+      const updatedProduct: {
+        id: number;
+        product_id: string;
+        product_name: string;
+        product_image: string | null;
+        competitor_link: string | null;
+        competitor_daily_sales: string | null;
+      } = await this.productsService.updateProductCompetitorInfo(id, body);
+
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: '竞争对手信息更新成功',
+        data: updatedProduct,
+      });
+    } catch (error: unknown) {
+      const safeMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error('更新竞争对手信息失败:', safeMessage);
+      const errorMessage = safeMessage || '更新竞争对手信息失败';
 
       // 如果是商品不存在的错误，返回404
       if (errorMessage.includes('商品不存在')) {

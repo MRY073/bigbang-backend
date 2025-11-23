@@ -3,6 +3,7 @@ import { ProductsService } from './products.service';
 import { QueryProductItemsDto } from './dto/query-product-items.dto';
 import { UpdateCustomCategoryDto } from './dto/update-custom-category.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
+import { UpdateCompetitorInfoDto } from './dto/update-competitor-info.dto';
 export declare class ProductItemsController {
     private readonly productsService;
     constructor(productsService: ProductsService);
@@ -12,4 +13,5 @@ export declare class ProductItemsController {
     deleteProductItem(id: string, res: Response): Promise<Response<any, Record<string, any>>>;
     getOfflineProducts(query: QueryProductItemsDto, res: Response): Promise<Response<any, Record<string, any>>>;
     updateProductStatus(id: string, body: UpdateProductStatusDto, res: Response): Promise<Response<any, Record<string, any>>>;
+    updateCompetitorInfo(id: string, body: UpdateCompetitorInfoDto, res: Response): Promise<Response<any, Record<string, any>>>;
 }
