@@ -1,0 +1,1 @@
+import{fG as i}from"./index-DG9AC6Fl.js";const o=t=>i.request("get","/api/finished/link/monitor/list",{params:t}),e=t=>i.request("get","/api/potential/link/monitor/list",{params:t}),s=t=>i.request("post","/api/finished/link/monitor/batch-ai-suggestion",{data:t}),a=t=>i.request("post","/api/potential/link/monitor/batch-ai-suggestion",{data:t});export{e as a,s as b,a as c,o as g};

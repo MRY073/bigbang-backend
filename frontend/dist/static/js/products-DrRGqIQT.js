@@ -1,1 +1,0 @@
-import{fG as r}from"./index-BTtCWf6Z.js";const o=t=>r.request("get","/api/products",{params:t}),a=t=>r.request("put","/api/products/stage",{data:t}),s=(t,e)=>r.request("put",`/api/product-items/${t}/status`,{data:{status:e}}),p=t=>s(t.product_id,1),c=t=>r.request("get","/api/products/testing-monitor",{params:t});export{c as a,o as g,p as o,a as u};
