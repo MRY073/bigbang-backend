@@ -404,7 +404,7 @@ let AdAnalysisService = class AdAnalysisService {
         console.log('==========================================\n');
         return result;
     }
-    async getStageProducts(shopID, date, stage, shopName) {
+    async getStageProducts(shopID, date, stage, shopName, customCategory, page = 1, pageSize = 20, sortBy = 'ad_spend', sortOrder = 'desc') {
         console.log('=== getStageProducts 函数开始执行 ===');
         console.log('接收到的店铺ID:', shopID);
         console.log('接收到的日期:', date);
@@ -412,6 +412,11 @@ let AdAnalysisService = class AdAnalysisService {
         if (shopName) {
             console.log('接收到的店铺名称:', shopName);
         }
+        if (customCategory) {
+            console.log('接收到的自定义分类:', customCategory);
+        }
+        console.log('接收到的分页参数: page=', page, ', pageSize=', pageSize);
+        console.log('接收到的排序参数: sortBy=', sortBy, ', sortOrder=', sortOrder);
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (!dateRegex.test(date)) {
             throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
@@ -432,21 +437,83 @@ let AdAnalysisService = class AdAnalysisService {
         if (!validStages.includes(stage)) {
             throw new Error(`阶段参数无效：${stage}，应为 product_stage, testing_stage, potential_stage, abandoned_stage, no_stage 之一`);
         }
-        console.log('\n--- 第一步：查询指定日期的广告数据 ---');
-        const adStats = await this.mysqlService.query(`SELECT 
+        const validPageSizes = [10, 20, 50, 100];
+        if (!validPageSizes.includes(pageSize)) {
+            console.log(`⚠️ pageSize ${pageSize} 不合法，使用默认值 20`);
+            pageSize = 20;
+        }
+        if (page < 1) {
+            console.log(`⚠️ page ${page} 小于1，使用默认值 1`);
+            page = 1;
+        }
+        const validSortBy = ['ad_spend', 'ad_sales', 'roi'];
+        if (!validSortBy.includes(sortBy)) {
+            console.log(`⚠️ sortBy ${sortBy} 不合法，使用默认值 ad_spend`);
+            sortBy = 'ad_spend';
+        }
+        const validSortOrder = ['asc', 'desc'];
+        if (!validSortOrder.includes(sortOrder)) {
+            console.log(`⚠️ sortOrder ${sortOrder} 不合法，使用默认值 desc`);
+            sortOrder = 'desc';
+        }
+        let filteredProductIds = null;
+        if (customCategory && customCategory.trim()) {
+            console.log('\n--- 第一步：查询符合自定义分类的商品ID ---');
+            const trimmedCategory = customCategory.trim();
+            const products = await this.mysqlService.query(`SELECT DISTINCT product_id
+        FROM product_items
+        WHERE shop_id = ?
+          AND (
+            custom_category_1 = ?
+            OR custom_category_2 = ?
+            OR custom_category_3 = ?
+            OR custom_category_4 = ?
+          )`, [
+                shopID,
+                trimmedCategory,
+                trimmedCategory,
+                trimmedCategory,
+                trimmedCategory,
+            ]);
+            filteredProductIds = products.map((p) => p.product_id);
+            console.log(`符合自定义分类的商品数量: ${filteredProductIds.length}`);
+            if (filteredProductIds.length === 0) {
+                console.log('⚠️ 未找到符合自定义分类的商品，返回空结果');
+                return {
+                    items: [],
+                    total: 0,
+                    page,
+                    pageSize,
+                };
+            }
+        }
+        console.log('\n--- 第二步：查询指定日期的广告数据 ---');
+        let adStatsQuery = `SELECT 
         product_id,
         COALESCE(spend, 0) as spend,
         COALESCE(sales_amount, 0) as sales_amount
       FROM ad_stats
-      WHERE shop_id = ? AND date = ? AND COALESCE(spend, 0) > 0
-      ORDER BY product_id ASC`, [shopID, dateStr]);
+      WHERE shop_id = ? AND date = ? AND COALESCE(spend, 0) > 0`;
+        const adStatsParams = [shopID, dateStr];
+        if (filteredProductIds !== null && filteredProductIds.length > 0) {
+            adStatsQuery += ` AND product_id IN (${filteredProductIds
+                .map(() => '?')
+                .join(',')})`;
+            adStatsParams.push(...filteredProductIds);
+        }
+        adStatsQuery += ' ORDER BY product_id ASC';
+        const adStats = await this.mysqlService.query(adStatsQuery, adStatsParams);
         console.log(`查询到的广告数据条数: ${adStats?.length || 0}`);
         if (!adStats || adStats.length === 0) {
-            console.log('⚠️ 未找到广告数据，返回空数组');
-            console.log('=== getStageProducts 函数执行完成（无数据）===\n');
-            return [];
+            console.log('⚠️ 未找到广告数据，返回空结果');
+            return {
+                items: [],
+                total: 0,
+                page,
+                pageSize,
+            };
         }
-        console.log('\n--- 第二步：判断商品阶段并筛选符合条件的商品 ---');
+        console.log('\n--- 第三步：判断商品阶段并筛选符合条件的商品 ---');
         console.log(`开始处理 ${adStats.length} 条广告数据`);
         const stageMap = new Map();
         const stageMapping = {
@@ -488,11 +555,15 @@ let AdAnalysisService = class AdAnalysisService {
         }
         console.log(`筛选后符合条件的商品数量: ${stageMap.size}`);
         if (stageMap.size === 0) {
-            console.log('⚠️ 未找到符合条件的商品，返回空数组');
-            console.log('=== getStageProducts 函数执行完成（无数据）===\n');
-            return [];
+            console.log('⚠️ 未找到符合条件的商品，返回空结果');
+            return {
+                items: [],
+                total: 0,
+                page,
+                pageSize,
+            };
         }
-        console.log('\n--- 第三步：查询商品基本信息 ---');
+        console.log('\n--- 第四步：查询商品基本信息 ---');
         const productIds = Array.from(stageMap.keys());
         console.log(`需要查询的商品ID数量: ${productIds.length}`);
         const products = await this.mysqlService.query(`SELECT 
@@ -505,7 +576,7 @@ let AdAnalysisService = class AdAnalysisService {
         AND (status IS NULL OR status = 0)
       ORDER BY product_id ASC`, [shopID, ...productIds]);
         console.log(`查询到的商品信息条数: ${products?.length || 0}`);
-        console.log('\n--- 第四步：合并数据并计算 ROI ---');
+        console.log('\n--- 第五步：合并数据并计算 ROI ---');
         const result = [];
         for (const product of products || []) {
             const adData = stageMap.get(product.product_id);
@@ -528,17 +599,41 @@ let AdAnalysisService = class AdAnalysisService {
                 roi: roi,
             });
         }
-        result.sort((a, b) => b.ad_spend - a.ad_spend);
-        console.log(`最终返回商品数量: ${result.length}`);
-        if (result.length > 0) {
+        console.log('\n--- 第六步：排序数据 ---');
+        result.sort((a, b) => {
+            let comparison = 0;
+            if (sortBy === 'ad_spend') {
+                comparison = a.ad_spend - b.ad_spend;
+            }
+            else if (sortBy === 'ad_sales') {
+                comparison = a.ad_sales - b.ad_sales;
+            }
+            else if (sortBy === 'roi') {
+                comparison = a.roi - b.roi;
+            }
+            return sortOrder === 'desc' ? -comparison : comparison;
+        });
+        console.log('\n--- 第七步：分页处理 ---');
+        const total = result.length;
+        const offset = (page - 1) * pageSize;
+        const paginatedItems = result.slice(offset, offset + pageSize);
+        console.log(`总记录数: ${total}`);
+        console.log(`当前页: ${page}, 每页数量: ${pageSize}`);
+        console.log(`返回记录数: ${paginatedItems.length}`);
+        if (paginatedItems.length > 0) {
             console.log('前3个商品示例:');
-            result.slice(0, 3).forEach((item) => {
+            paginatedItems.slice(0, 3).forEach((item) => {
                 console.log(`  ${item.product_id}: ${item.title}, 花费=${item.ad_spend}, 销售额=${item.ad_sales}, ROI=${item.roi}`);
             });
         }
         console.log('\n=== getStageProducts 函数执行完成 ===');
         console.log('==========================================\n');
-        return result;
+        return {
+            items: paginatedItems,
+            total,
+            page,
+            pageSize,
+        };
     }
 };
 exports.AdAnalysisService = AdAnalysisService;

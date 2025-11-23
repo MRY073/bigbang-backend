@@ -150,14 +150,24 @@ export class AdAnalysisController {
 
   /**
    * 阶段商品列表
-   * GET /ad-analysis/stage-products?shopID=店铺ID&date=日期&stage=阶段&shopName=店铺名称
+   * GET /ad-analysis/stage-products?shopID=店铺ID&date=日期&stage=阶段&shopName=店铺名称&customCategory=自定义分类&page=页码&pageSize=每页数量&sortBy=排序字段&sortOrder=排序顺序
    */
   @Get('stage-products')
   async getStageProducts(
     @Query() query: StageProductsDto,
     @Res() res: Response,
   ) {
-    const { shopID, date, stage, shopName } = query;
+    const {
+      shopID,
+      date,
+      stage,
+      shopName,
+      customCategory,
+      page,
+      pageSize,
+      sortBy,
+      sortOrder,
+    } = query;
 
     if (!shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
@@ -220,12 +230,64 @@ export class AdAnalysisController {
       });
     }
 
+    // 验证分页参数
+    const validPageSizes = [10, 20, 50, 100];
+    if (pageSize !== undefined) {
+      const pageSizeNum = Number(pageSize);
+      if (isNaN(pageSizeNum) || !validPageSizes.includes(pageSizeNum)) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          success: false,
+          error: '参数错误：pageSize 必须是 10, 20, 50, 100 之一',
+          message: '参数验证失败',
+        });
+      }
+    }
+
+    if (page !== undefined) {
+      const pageNum = Number(page);
+      if (isNaN(pageNum) || pageNum < 1) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          success: false,
+          error: '参数错误：page 必须是大于等于 1 的整数',
+          message: '参数验证失败',
+        });
+      }
+    }
+
+    // 验证排序参数
+    if (sortBy !== undefined) {
+      const validSortBy = ['ad_spend', 'ad_sales', 'roi'];
+      if (!validSortBy.includes(sortBy)) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          success: false,
+          error: '参数错误：sortBy 必须是 ad_spend, ad_sales, roi 之一',
+          message: '参数验证失败',
+        });
+      }
+    }
+
+    if (sortOrder !== undefined) {
+      const validSortOrder = ['asc', 'desc'];
+      if (!validSortOrder.includes(sortOrder)) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          success: false,
+          error: '参数错误：sortOrder 必须是 asc, desc 之一',
+          message: '参数验证失败',
+        });
+      }
+    }
+
     try {
       const data = await this.adAnalysisService.getStageProducts(
         shopID,
         date,
         stage,
         shopName,
+        customCategory,
+        page !== undefined ? Number(page) : undefined,
+        pageSize !== undefined ? Number(pageSize) : undefined,
+        sortBy,
+        sortOrder,
       );
 
       return res.status(HttpStatus.OK).json({
@@ -237,7 +299,7 @@ export class AdAnalysisController {
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
-        message: '查询失败',
+        message: '查询失败，请稍后重试',
       });
     }
   }

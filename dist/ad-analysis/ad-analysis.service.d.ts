@@ -50,12 +50,17 @@ export declare class AdAnalysisService {
             };
         };
     }>;
-    getStageProducts(shopID: string, date: string, stage: string, shopName?: string): Promise<Array<{
-        product_id: string;
-        title: string;
-        main_image: string;
-        ad_spend: number;
-        ad_sales: number;
-        roi: number;
-    }>>;
+    getStageProducts(shopID: string, date: string, stage: string, shopName?: string, customCategory?: string, page?: number, pageSize?: number, sortBy?: string, sortOrder?: string): Promise<{
+        items: Array<{
+            product_id: string;
+            title: string;
+            main_image: string;
+            ad_spend: number;
+            ad_sales: number;
+            roi: number;
+        }>;
+        total: number;
+        page: number;
+        pageSize: number;
+    }>;
 }

@@ -6,6 +6,11 @@ class StageProductsDto {
     date;
     stage;
     shopName;
+    customCategory;
+    page;
+    pageSize;
+    sortBy;
+    sortOrder;
 }
 exports.StageProductsDto = StageProductsDto;
 //# sourceMappingURL=stage-products.dto.js.map
