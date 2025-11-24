@@ -21,7 +21,7 @@ export declare class AdAnalysisService {
         abandoned_stage_roi?: number;
         no_stage_roi?: number;
     }>>;
-    getAdRatioByDate(shopID: string, date: string, shopName?: string, customCategory?: string): Promise<{
+    getAdRatioByDate(shopID: string, startDate: string, endDate: string, shopName?: string, customCategory?: string): Promise<{
         stages: {
             product_stage?: {
                 spend: number;
@@ -50,7 +50,7 @@ export declare class AdAnalysisService {
             };
         };
     }>;
-    getStageProducts(shopID: string, date: string, stage: string, shopName?: string, customCategory?: string, page?: number, pageSize?: number, sortBy?: string, sortOrder?: string): Promise<{
+    getStageProducts(shopID: string, startDate: string, endDate: string, stage: string, shopName?: string, customCategory?: string, page?: number, pageSize?: number, sortBy?: string, sortOrder?: string): Promise<{
         items: Array<{
             product_id: string;
             title: string;

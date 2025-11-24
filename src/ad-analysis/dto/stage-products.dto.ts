@@ -1,7 +1,8 @@
-// 阶段商品列表查询 DTO
+// 阶段商品列表查询 DTO（时间段版本）
 export class StageProductsDto {
   shopID: string; // 店铺ID
-  date: string; // 日期（YYYY-MM-DD 格式）
+  startDate: string; // 开始日期（YYYY-MM-DD 格式）
+  endDate: string; // 结束日期（YYYY-MM-DD 格式）
   stage: string; // 阶段标识：product_stage, testing_stage, potential_stage, abandoned_stage, no_stage
   shopName?: string; // 店铺名称（可选，用于日志记录）
   customCategory?: string; // 自定义分类值，用于筛选商品
@@ -9,5 +10,7 @@ export class StageProductsDto {
   pageSize?: number; // 每页数量，默认为 20，可选值：10, 20, 50, 100
   sortBy?: string; // 排序字段，可选值：ad_spend, ad_sales, roi，默认为 ad_spend
   sortOrder?: string; // 排序顺序，可选值：asc, desc，默认为 desc
+  // 向后兼容：保留 date 参数支持
+  date?: string; // 日期（YYYY-MM-DD 格式，向后兼容，如果提供则同时作为 startDate 和 endDate）
 }
 

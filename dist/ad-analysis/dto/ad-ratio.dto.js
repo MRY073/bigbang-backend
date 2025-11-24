@@ -3,9 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdRatioDto = void 0;
 class AdRatioDto {
     shopID;
-    date;
+    startDate;
+    endDate;
     shopName;
     customCategory;
+    date;
 }
 exports.AdRatioDto = AdRatioDto;
 //# sourceMappingURL=ad-ratio.dto.js.map

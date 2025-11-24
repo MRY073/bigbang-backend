@@ -3,7 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StageProductsDto = void 0;
 class StageProductsDto {
     shopID;
-    date;
+    startDate;
+    endDate;
     stage;
     shopName;
     customCategory;
@@ -11,6 +12,7 @@ class StageProductsDto {
     pageSize;
     sortBy;
     sortOrder;
+    date;
 }
 exports.StageProductsDto = StageProductsDto;
 //# sourceMappingURL=stage-products.dto.js.map

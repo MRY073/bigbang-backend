@@ -64,19 +64,12 @@ let AdAnalysisController = class AdAnalysisController {
         }
     }
     async getAdRatio(query, res) {
-        const { shopID, date, shopName, customCategory } = query;
+        const { shopID, startDate, endDate, date, shopName, customCategory } = query;
         if (!shopID) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
                 error: 'shopID 参数不能为空',
                 message: 'shopID 参数不能为空',
-            });
-        }
-        if (!date) {
-            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
-                success: false,
-                error: 'date 参数不能为空',
-                message: 'date 参数不能为空',
             });
         }
         if (!shopName) {
@@ -86,20 +79,62 @@ let AdAnalysisController = class AdAnalysisController {
                 message: 'shopName 参数不能为空',
             });
         }
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (!dateRegex.test(date)) {
+        let finalStartDate = startDate;
+        let finalEndDate = endDate;
+        if (date) {
+            finalStartDate = date;
+            finalEndDate = date;
+        }
+        if (!finalStartDate) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
-                error: '日期格式错误',
-                message: '日期格式应为 YYYY-MM-DD',
+                error: 'startDate 参数不能为空',
+                message: 'startDate 参数不能为空（或使用 date 参数进行向后兼容）',
             });
         }
-        const targetDate = new Date(date);
-        if (isNaN(targetDate.getTime())) {
+        if (!finalEndDate) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
-                error: '日期格式错误',
-                message: '日期格式应为 YYYY-MM-DD',
+                error: 'endDate 参数不能为空',
+                message: 'endDate 参数不能为空（或使用 date 参数进行向后兼容）',
+            });
+        }
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(finalStartDate)) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '开始日期格式错误',
+                message: '开始日期格式应为 YYYY-MM-DD',
+            });
+        }
+        if (!dateRegex.test(finalEndDate)) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '结束日期格式错误',
+                message: '结束日期格式应为 YYYY-MM-DD',
+            });
+        }
+        const startDateObj = new Date(finalStartDate);
+        const endDateObj = new Date(finalEndDate);
+        if (isNaN(startDateObj.getTime())) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '开始日期格式错误',
+                message: '开始日期格式应为 YYYY-MM-DD',
+            });
+        }
+        if (isNaN(endDateObj.getTime())) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '结束日期格式错误',
+                message: '结束日期格式应为 YYYY-MM-DD',
+            });
+        }
+        if (endDateObj < startDateObj) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '结束日期不能早于开始日期',
+                message: '结束日期不能早于开始日期',
             });
         }
         if (customCategory !== undefined && customCategory !== null && customCategory.trim() === '') {
@@ -110,7 +145,7 @@ let AdAnalysisController = class AdAnalysisController {
             });
         }
         try {
-            const data = await this.adAnalysisService.getAdRatioByDate(shopID, date, shopName, customCategory);
+            const data = await this.adAnalysisService.getAdRatioByDate(shopID, finalStartDate, finalEndDate, shopName, customCategory);
             return res.status(common_1.HttpStatus.OK).json({
                 success: true,
                 message: '查询成功',
@@ -126,19 +161,12 @@ let AdAnalysisController = class AdAnalysisController {
         }
     }
     async getStageProducts(query, res) {
-        const { shopID, date, stage, shopName, customCategory, page, pageSize, sortBy, sortOrder, } = query;
+        const { shopID, startDate, endDate, date, stage, shopName, customCategory, page, pageSize, sortBy, sortOrder, } = query;
         if (!shopID) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
                 error: 'shopID 参数不能为空',
                 message: 'shopID 参数不能为空',
-            });
-        }
-        if (!date) {
-            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
-                success: false,
-                error: 'date 参数不能为空',
-                message: 'date 参数不能为空',
             });
         }
         if (!stage) {
@@ -148,20 +176,62 @@ let AdAnalysisController = class AdAnalysisController {
                 message: 'stage 参数不能为空',
             });
         }
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (!dateRegex.test(date)) {
+        let finalStartDate = startDate;
+        let finalEndDate = endDate;
+        if (date) {
+            finalStartDate = date;
+            finalEndDate = date;
+        }
+        if (!finalStartDate) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
-                error: '日期格式错误',
-                message: '日期格式应为 YYYY-MM-DD',
+                error: 'startDate 参数不能为空',
+                message: 'startDate 参数不能为空（或使用 date 参数进行向后兼容）',
             });
         }
-        const targetDate = new Date(date);
-        if (isNaN(targetDate.getTime())) {
+        if (!finalEndDate) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,
-                error: '日期格式错误',
-                message: '日期格式应为 YYYY-MM-DD',
+                error: 'endDate 参数不能为空',
+                message: 'endDate 参数不能为空（或使用 date 参数进行向后兼容）',
+            });
+        }
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(finalStartDate)) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '开始日期格式错误',
+                message: '开始日期格式应为 YYYY-MM-DD',
+            });
+        }
+        if (!dateRegex.test(finalEndDate)) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '结束日期格式错误',
+                message: '结束日期格式应为 YYYY-MM-DD',
+            });
+        }
+        const startDateObj = new Date(finalStartDate);
+        const endDateObj = new Date(finalEndDate);
+        if (isNaN(startDateObj.getTime())) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '开始日期格式错误',
+                message: '开始日期格式应为 YYYY-MM-DD',
+            });
+        }
+        if (isNaN(endDateObj.getTime())) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '结束日期格式错误',
+                message: '结束日期格式应为 YYYY-MM-DD',
+            });
+        }
+        if (endDateObj < startDateObj) {
+            return res.status(common_1.HttpStatus.BAD_REQUEST).json({
+                success: false,
+                error: '结束日期不能早于开始日期',
+                message: '结束日期不能早于开始日期',
             });
         }
         const validStages = [
@@ -220,7 +290,7 @@ let AdAnalysisController = class AdAnalysisController {
             }
         }
         try {
-            const data = await this.adAnalysisService.getStageProducts(shopID, date, stage, shopName, customCategory, page !== undefined ? Number(page) : undefined, pageSize !== undefined ? Number(pageSize) : undefined, sortBy, sortOrder);
+            const data = await this.adAnalysisService.getStageProducts(shopID, finalStartDate, finalEndDate, stage, shopName, customCategory, page !== undefined ? Number(page) : undefined, pageSize !== undefined ? Number(pageSize) : undefined, sortBy, sortOrder);
             return res.status(common_1.HttpStatus.OK).json({
                 success: true,
                 message: '查询成功',

@@ -66,26 +66,19 @@ export class AdAnalysisController {
   }
 
   /**
-   * 指定日期广告占比
-   * GET /ad-analysis/ad-ratio?shopID=店铺ID&date=日期&shopName=店铺名称&customCategory=自定义分类（可选）
+   * 时间段广告占比
+   * GET /ad-analysis/ad-ratio?shopID=店铺ID&startDate=开始日期&endDate=结束日期&shopName=店铺名称&customCategory=自定义分类（可选）
+   * 向后兼容：如果提供了 date 参数，则同时作为 startDate 和 endDate
    */
   @Get('ad-ratio')
   async getAdRatio(@Query() query: AdRatioDto, @Res() res: Response) {
-    const { shopID, date, shopName, customCategory } = query;
+    const { shopID, startDate, endDate, date, shopName, customCategory } = query;
 
     if (!shopID) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
         error: 'shopID 参数不能为空',
         message: 'shopID 参数不能为空',
-      });
-    }
-
-    if (!date) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        error: 'date 参数不能为空',
-        message: 'date 参数不能为空',
       });
     }
 
@@ -97,23 +90,75 @@ export class AdAnalysisController {
       });
     }
 
-    // 验证日期格式：YYYY-MM-DD
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
+    // 向后兼容：如果提供了 date 参数，则同时作为 startDate 和 endDate
+    let finalStartDate = startDate;
+    let finalEndDate = endDate;
+
+    if (date) {
+      // 向后兼容模式
+      finalStartDate = date;
+      finalEndDate = date;
+    }
+
+    if (!finalStartDate) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        error: '日期格式错误',
-        message: '日期格式应为 YYYY-MM-DD',
+        error: 'startDate 参数不能为空',
+        message: 'startDate 参数不能为空（或使用 date 参数进行向后兼容）',
+      });
+    }
+
+    if (!finalEndDate) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'endDate 参数不能为空',
+        message: 'endDate 参数不能为空（或使用 date 参数进行向后兼容）',
+      });
+    }
+
+    // 验证日期格式：YYYY-MM-DD
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(finalStartDate)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '开始日期格式错误',
+        message: '开始日期格式应为 YYYY-MM-DD',
+      });
+    }
+
+    if (!dateRegex.test(finalEndDate)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '结束日期格式错误',
+        message: '结束日期格式应为 YYYY-MM-DD',
       });
     }
 
     // 验证日期是否有效
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
+    const startDateObj = new Date(finalStartDate);
+    const endDateObj = new Date(finalEndDate);
+    if (isNaN(startDateObj.getTime())) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        error: '日期格式错误',
-        message: '日期格式应为 YYYY-MM-DD',
+        error: '开始日期格式错误',
+        message: '开始日期格式应为 YYYY-MM-DD',
+      });
+    }
+
+    if (isNaN(endDateObj.getTime())) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '结束日期格式错误',
+        message: '结束日期格式应为 YYYY-MM-DD',
+      });
+    }
+
+    // 验证日期范围
+    if (endDateObj < startDateObj) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '结束日期不能早于开始日期',
+        message: '结束日期不能早于开始日期',
       });
     }
 
@@ -129,7 +174,8 @@ export class AdAnalysisController {
     try {
       const data = await this.adAnalysisService.getAdRatioByDate(
         shopID,
-        date,
+        finalStartDate,
+        finalEndDate,
         shopName,
         customCategory,
       );
@@ -149,8 +195,9 @@ export class AdAnalysisController {
   }
 
   /**
-   * 阶段商品列表
-   * GET /ad-analysis/stage-products?shopID=店铺ID&date=日期&stage=阶段&shopName=店铺名称&customCategory=自定义分类&page=页码&pageSize=每页数量&sortBy=排序字段&sortOrder=排序顺序
+   * 阶段商品列表（时间段版本）
+   * GET /ad-analysis/stage-products?shopID=店铺ID&startDate=开始日期&endDate=结束日期&stage=阶段&shopName=店铺名称&customCategory=自定义分类&page=页码&pageSize=每页数量&sortBy=排序字段&sortOrder=排序顺序
+   * 向后兼容：如果提供了 date 参数，则同时作为 startDate 和 endDate
    */
   @Get('stage-products')
   async getStageProducts(
@@ -159,6 +206,8 @@ export class AdAnalysisController {
   ) {
     const {
       shopID,
+      startDate,
+      endDate,
       date,
       stage,
       shopName,
@@ -177,14 +226,6 @@ export class AdAnalysisController {
       });
     }
 
-    if (!date) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        error: 'date 参数不能为空',
-        message: 'date 参数不能为空',
-      });
-    }
-
     if (!stage) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
@@ -193,23 +234,75 @@ export class AdAnalysisController {
       });
     }
 
-    // 验证日期格式：YYYY-MM-DD
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
+    // 向后兼容：如果提供了 date 参数，则同时作为 startDate 和 endDate
+    let finalStartDate = startDate;
+    let finalEndDate = endDate;
+
+    if (date) {
+      // 向后兼容模式
+      finalStartDate = date;
+      finalEndDate = date;
+    }
+
+    if (!finalStartDate) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        error: '日期格式错误',
-        message: '日期格式应为 YYYY-MM-DD',
+        error: 'startDate 参数不能为空',
+        message: 'startDate 参数不能为空（或使用 date 参数进行向后兼容）',
+      });
+    }
+
+    if (!finalEndDate) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: 'endDate 参数不能为空',
+        message: 'endDate 参数不能为空（或使用 date 参数进行向后兼容）',
+      });
+    }
+
+    // 验证日期格式：YYYY-MM-DD
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(finalStartDate)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '开始日期格式错误',
+        message: '开始日期格式应为 YYYY-MM-DD',
+      });
+    }
+
+    if (!dateRegex.test(finalEndDate)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '结束日期格式错误',
+        message: '结束日期格式应为 YYYY-MM-DD',
       });
     }
 
     // 验证日期是否有效
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
+    const startDateObj = new Date(finalStartDate);
+    const endDateObj = new Date(finalEndDate);
+    if (isNaN(startDateObj.getTime())) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        error: '日期格式错误',
-        message: '日期格式应为 YYYY-MM-DD',
+        error: '开始日期格式错误',
+        message: '开始日期格式应为 YYYY-MM-DD',
+      });
+    }
+
+    if (isNaN(endDateObj.getTime())) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '结束日期格式错误',
+        message: '结束日期格式应为 YYYY-MM-DD',
+      });
+    }
+
+    // 验证日期范围
+    if (endDateObj < startDateObj) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        error: '结束日期不能早于开始日期',
+        message: '结束日期不能早于开始日期',
       });
     }
 
@@ -280,7 +373,8 @@ export class AdAnalysisController {
     try {
       const data = await this.adAnalysisService.getStageProducts(
         shopID,
-        date,
+        finalStartDate,
+        finalEndDate,
         stage,
         shopName,
         customCategory,

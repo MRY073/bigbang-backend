@@ -1,6 +1,7 @@
 export declare class StageProductsDto {
     shopID: string;
-    date: string;
+    startDate: string;
+    endDate: string;
     stage: string;
     shopName?: string;
     customCategory?: string;
@@ -8,4 +9,5 @@ export declare class StageProductsDto {
     pageSize?: number;
     sortBy?: string;
     sortOrder?: string;
+    date?: string;
 }

@@ -1,6 +1,8 @@
 export declare class AdRatioDto {
     shopID: string;
-    date: string;
+    startDate: string;
+    endDate: string;
     shopName: string;
     customCategory?: string;
+    date?: string;
 }

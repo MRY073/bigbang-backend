@@ -437,17 +437,19 @@ export class AdAnalysisService {
   }
 
   /**
-   * 指定日期广告占比
-   * 获取当天的不同阶段商品的广告花费、销售额和ROI
+   * 时间段广告占比
+   * 获取指定时间段内不同阶段商品的广告花费、销售额和ROI累计数据
    * @param shopID 店铺ID
-   * @param date 日期（YYYY-MM-DD 格式）
+   * @param startDate 开始日期（YYYY-MM-DD 格式）
+   * @param endDate 结束日期（YYYY-MM-DD 格式）
    * @param shopName 店铺名称（用于日志记录）
    * @param customCategory 自定义分类筛选值（可选）
-   * @returns 指定日期的广告占比数据
+   * @returns 时间段的广告占比数据
    */
   async getAdRatioByDate(
     shopID: string,
-    date: string,
+    startDate: string,
+    endDate: string,
     shopName?: string,
     customCategory?: string,
   ): Promise<{
@@ -479,9 +481,10 @@ export class AdAnalysisService {
       };
     };
   }> {
-    console.log('=== getAdRatioByDate 函数开始执行 ===');
+    console.log('=== getAdRatioByDate 函数开始执行（时间段版本）===');
     console.log('接收到的店铺ID:', shopID);
-    console.log('接收到的日期:', date);
+    console.log('接收到的开始日期:', startDate);
+    console.log('接收到的结束日期:', endDate);
     if (shopName) {
       console.log('接收到的店铺名称:', shopName);
     }
@@ -490,13 +493,23 @@ export class AdAnalysisService {
     }
 
     // 验证日期格式
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
-      throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+    if (isNaN(startDateObj.getTime())) {
+      throw new Error(`开始日期格式错误：${startDate}，应为 YYYY-MM-DD 格式`);
+    }
+    if (isNaN(endDateObj.getTime())) {
+      throw new Error(`结束日期格式错误：${endDate}，应为 YYYY-MM-DD 格式`);
     }
 
-    const dateStr = targetDate.toISOString().split('T')[0];
-    console.log('解析后的日期:', dateStr);
+    // 验证日期范围
+    if (endDateObj < startDateObj) {
+      throw new Error('结束日期不能早于开始日期');
+    }
+
+    const startDateStr = startDateObj.toISOString().split('T')[0];
+    const endDateStr = endDateObj.toISOString().split('T')[0];
+    console.log('解析后的日期范围:', startDateStr, '到', endDateStr);
 
     // 1. 如果提供了自定义分类，先查询符合条件的商品ID
     let filteredProductIds: string[] | null = null;
@@ -521,15 +534,16 @@ export class AdAnalysisService {
       console.log(`符合自定义分类的商品数量: ${filteredProductIds.length}`);
     }
 
-    // 2. 查询指定日期的广告数据
-    console.log('\n--- 第二步：查询指定日期的广告数据 ---');
+    // 2. 查询时间段内的广告数据
+    console.log('\n--- 第二步：查询时间段内的广告数据 ---');
     let adStatsQuery = `SELECT 
         product_id,
+        date,
         COALESCE(spend, 0) as spend,
         COALESCE(sales_amount, 0) as sales_amount
       FROM ad_stats
-      WHERE shop_id = ? AND date = ?`;
-    const queryParams: Array<string | string[]> = [shopID, dateStr];
+      WHERE shop_id = ? AND date >= ? AND date <= ?`;
+    const queryParams: Array<string | string[]> = [shopID, startDateStr, endDateStr];
 
     if (filteredProductIds !== null && filteredProductIds.length > 0) {
       adStatsQuery += ` AND product_id IN (${filteredProductIds.map(() => '?').join(',')})`;
@@ -552,6 +566,7 @@ export class AdAnalysisService {
 
     const adStats = await this.mysqlService.query<{
       product_id: string;
+      date: Date | string;
       spend: number | null;
       sales_amount: number | null;
     }>(adStatsQuery, queryParams);
@@ -583,14 +598,20 @@ export class AdAnalysisService {
       const spend = Number(ad.spend) || 0;
       const sales = Number(ad.sales_amount) || 0;
 
+      // 获取该广告数据对应的日期
+      const adDate =
+        ad.date instanceof Date
+          ? ad.date
+          : new Date(ad.date as unknown as string);
+
       const stage = await this.getProductStageByDate(
         ad.product_id,
         shopID,
-        targetDate,
+        adDate,
       );
 
       console.log(
-        `商品 ${ad.product_id}: 阶段=${stage || '无'}, 花费=${spend}, 销售额=${sales}`,
+        `商品 ${ad.product_id} (日期: ${adDate.toISOString().split('T')[0]}): 阶段=${stage || '无'}, 花费=${spend}, 销售额=${sales}`,
       );
 
       if (stage === 'testing') {
@@ -649,7 +670,7 @@ export class AdAnalysisService {
       no_stage: stageData.no_stage,
     };
 
-    console.log('\n=== getAdRatioByDate 函数执行完成 ===');
+    console.log('\n=== getAdRatioByDate 函数执行完成（时间段版本）===');
     console.log('最终返回结果:', result);
     console.log('==========================================\n');
 
@@ -657,17 +678,19 @@ export class AdAnalysisService {
   }
 
   /**
-   * 获取指定日期、指定阶段、指定店铺的商品列表
+   * 获取指定时间段、指定阶段、指定店铺的商品列表（时间段版本）
    * 只返回有广告花费的商品
    * @param shopID 店铺ID
-   * @param date 日期（YYYY-MM-DD 格式）
+   * @param startDate 开始日期（YYYY-MM-DD 格式）
+   * @param endDate 结束日期（YYYY-MM-DD 格式）
    * @param stage 阶段标识：product_stage, testing_stage, potential_stage, abandoned_stage, no_stage
    * @param shopName 店铺名称（可选，用于日志记录）
    * @returns 商品列表，包含商品ID、标题、主图、广告花费、广告销售额、ROI等信息
    */
   async getStageProducts(
     shopID: string,
-    date: string,
+    startDate: string,
+    endDate: string,
     stage: string,
     shopName?: string,
     customCategory?: string,
@@ -688,9 +711,10 @@ export class AdAnalysisService {
     page: number;
     pageSize: number;
   }> {
-    console.log('=== getStageProducts 函数开始执行 ===');
+    console.log('=== getStageProducts 函数开始执行（时间段版本）===');
     console.log('接收到的店铺ID:', shopID);
-    console.log('接收到的日期:', date);
+    console.log('接收到的开始日期:', startDate);
+    console.log('接收到的结束日期:', endDate);
     console.log('接收到的阶段:', stage);
     if (shopName) {
       console.log('接收到的店铺名称:', shopName);
@@ -703,17 +727,30 @@ export class AdAnalysisService {
 
     // 验证日期格式
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
-      throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
+    if (!dateRegex.test(startDate)) {
+      throw new Error(`开始日期格式错误：${startDate}，应为 YYYY-MM-DD 格式`);
+    }
+    if (!dateRegex.test(endDate)) {
+      throw new Error(`结束日期格式错误：${endDate}，应为 YYYY-MM-DD 格式`);
     }
 
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
-      throw new Error(`日期格式错误：${date}，应为 YYYY-MM-DD 格式`);
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+    if (isNaN(startDateObj.getTime())) {
+      throw new Error(`开始日期格式错误：${startDate}，应为 YYYY-MM-DD 格式`);
+    }
+    if (isNaN(endDateObj.getTime())) {
+      throw new Error(`结束日期格式错误：${endDate}，应为 YYYY-MM-DD 格式`);
     }
 
-    const dateStr = targetDate.toISOString().split('T')[0];
-    console.log('解析后的日期:', dateStr);
+    // 验证日期范围
+    if (endDateObj < startDateObj) {
+      throw new Error('结束日期不能早于开始日期');
+    }
+
+    const startDateStr = startDateObj.toISOString().split('T')[0];
+    const endDateStr = endDateObj.toISOString().split('T')[0];
+    console.log('解析后的日期范围:', startDateStr, '到', endDateStr);
 
     // 验证阶段参数
     const validStages = [
@@ -790,15 +827,16 @@ export class AdAnalysisService {
       }
     }
 
-    // 2. 查询指定日期、指定店铺的广告数据（只查询有花费的数据）
-    console.log('\n--- 第二步：查询指定日期的广告数据 ---');
+    // 2. 查询时间段内、指定店铺的广告数据（只查询有花费的数据）
+    console.log('\n--- 第二步：查询时间段内的广告数据 ---');
     let adStatsQuery = `SELECT 
         product_id,
+        date,
         COALESCE(spend, 0) as spend,
         COALESCE(sales_amount, 0) as sales_amount
       FROM ad_stats
-      WHERE shop_id = ? AND date = ? AND COALESCE(spend, 0) > 0`;
-    const adStatsParams: Array<string | string[]> = [shopID, dateStr];
+      WHERE shop_id = ? AND date >= ? AND date <= ? AND COALESCE(spend, 0) > 0`;
+    const adStatsParams: Array<string | string[]> = [shopID, startDateStr, endDateStr];
 
     if (filteredProductIds !== null && filteredProductIds.length > 0) {
       adStatsQuery += ` AND product_id IN (${filteredProductIds
@@ -811,6 +849,7 @@ export class AdAnalysisService {
 
     const adStats = await this.mysqlService.query<{
       product_id: string;
+      date: Date | string;
       spend: number | null;
       sales_amount: number | null;
     }>(adStatsQuery, adStatsParams);
@@ -860,10 +899,16 @@ export class AdAnalysisService {
 
       if (spend <= 0) continue; // 跳过花费为0的数据（理论上不应该出现，因为SQL已过滤）
 
+      // 获取该广告数据对应的日期
+      const adDate =
+        ad.date instanceof Date
+          ? ad.date
+          : new Date(ad.date as unknown as string);
+
       const productStage = await this.getProductStageByDate(
         ad.product_id,
         shopID,
-        targetDate,
+        adDate,
       );
 
       // 判断是否符合指定阶段
@@ -879,7 +924,7 @@ export class AdAnalysisService {
         }
       }
 
-      // 累加同一商品的花费和销售额（如果同一天有多个广告记录）
+      // 累加同一商品的花费和销售额（时间段内累计）
       const existing = stageMap.get(ad.product_id);
       if (existing) {
         existing.ad_spend += spend;
@@ -999,7 +1044,7 @@ export class AdAnalysisService {
       });
     }
 
-    console.log('\n=== getStageProducts 函数执行完成 ===');
+    console.log('\n=== getStageProducts 函数执行完成（时间段版本）===');
     console.log('==========================================\n');
 
     return {
