@@ -5,4 +5,5 @@ export declare class UploadController {
     private readonly uploadService;
     constructor(uploadService: UploadService);
     upload(files: Express.Multer.File[], body: UploadDto, res: Response): Promise<Response<any, Record<string, any>>>;
+    getUploadDates(shopID: string | undefined, res: Response): Promise<Response<any, Record<string, any>>>;
 }

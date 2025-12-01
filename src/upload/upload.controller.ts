@@ -1,9 +1,11 @@
 import {
   Controller,
   Post,
+  Get,
   UseInterceptors,
   UploadedFiles,
   Body,
+  Query,
   HttpStatus,
   Res,
   UseGuards,
@@ -64,6 +66,28 @@ export class UploadController {
         success: false,
         message: '上传失败',
         error: error instanceof Error ? error.message : '未知错误',
+      });
+    }
+  }
+
+  @Get('dates')
+  async getUploadDates(
+    @Query('shopID') shopID: string | undefined,
+    @Res() res: Response,
+  ) {
+    try {
+      const dates = await this.uploadService.getUploadDates(shopID);
+
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: '获取成功',
+        data: dates,
+      });
+    } catch (error) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: `获取失败：${error instanceof Error ? error.message : '未知错误'}`,
+        data: null,
       });
     }
   }

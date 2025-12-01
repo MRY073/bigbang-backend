@@ -53,6 +53,23 @@ let UploadController = class UploadController {
             });
         }
     }
+    async getUploadDates(shopID, res) {
+        try {
+            const dates = await this.uploadService.getUploadDates(shopID);
+            return res.status(common_1.HttpStatus.OK).json({
+                success: true,
+                message: '获取成功',
+                data: dates,
+            });
+        }
+        catch (error) {
+            return res.status(common_1.HttpStatus.INTERNAL_SERVER_ERROR).json({
+                success: false,
+                message: `获取失败：${error instanceof Error ? error.message : '未知错误'}`,
+                data: null,
+            });
+        }
+    }
 };
 exports.UploadController = UploadController;
 __decorate([
@@ -65,6 +82,14 @@ __decorate([
     __metadata("design:paramtypes", [Array, upload_dto_1.UploadDto, Object]),
     __metadata("design:returntype", Promise)
 ], UploadController.prototype, "upload", null);
+__decorate([
+    (0, common_1.Get)('dates'),
+    __param(0, (0, common_1.Query)('shopID')),
+    __param(1, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], UploadController.prototype, "getUploadDates", null);
 exports.UploadController = UploadController = __decorate([
     (0, common_1.Controller)('upload'),
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),

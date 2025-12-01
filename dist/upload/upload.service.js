@@ -985,6 +985,42 @@ let UploadService = class UploadService {
             updatedAt: new Date(),
         }));
     }
+    async getUploadDates(shopID) {
+        try {
+            let adQuery = `
+        SELECT DISTINCT DATE_FORMAT(date, '%Y-%m-%d') as date
+        FROM ad_stats
+        WHERE date IS NOT NULL
+      `;
+            const adParams = [];
+            if (shopID) {
+                adQuery += ' AND shop_id = ?';
+                adParams.push(shopID);
+            }
+            adQuery += ' ORDER BY date DESC';
+            const adDates = await this.mysqlService.query(adQuery, adParams);
+            let dailyQuery = `
+        SELECT DISTINCT DATE_FORMAT(date, '%Y-%m-%d') as date
+        FROM daily_product_stats
+        WHERE date IS NOT NULL
+      `;
+            const dailyParams = [];
+            if (shopID) {
+                dailyQuery += ' AND shop_id = ?';
+                dailyParams.push(shopID);
+            }
+            dailyQuery += ' ORDER BY date DESC';
+            const dailyDates = await this.mysqlService.query(dailyQuery, dailyParams);
+            return {
+                ad: adDates.map((item) => item.date),
+                daily: dailyDates.map((item) => item.date),
+            };
+        }
+        catch (error) {
+            console.error('获取已上传日期列表失败:', error);
+            throw new Error(`获取已上传日期列表失败：${error instanceof Error ? error.message : '未知错误'}`);
+        }
+    }
 };
 exports.UploadService = UploadService;
 exports.UploadService = UploadService = __decorate([

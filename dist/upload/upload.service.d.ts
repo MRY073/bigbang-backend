@@ -47,5 +47,9 @@ export declare class UploadService {
         message: string;
     }>;
     private handleDefaultUpload;
+    getUploadDates(shopID?: string): Promise<{
+        ad: string[];
+        daily: string[];
+    }>;
 }
 export {};

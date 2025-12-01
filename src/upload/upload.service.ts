@@ -1502,4 +1502,66 @@ export class UploadService {
       updatedAt: new Date(),
     }));
   }
+
+  /**
+   * 获取已上传文件的日期列表
+   * @param shopID 可选的店铺ID，如果不传则返回所有店铺的日期
+   * @returns 包含 ad 和 daily 日期列表的对象
+   */
+  async getUploadDates(shopID?: string): Promise<{
+    ad: string[];
+    daily: string[];
+  }> {
+    try {
+      // 查询广告文件已上传日期
+      let adQuery = `
+        SELECT DISTINCT DATE_FORMAT(date, '%Y-%m-%d') as date
+        FROM ad_stats
+        WHERE date IS NOT NULL
+      `;
+      const adParams: any[] = [];
+
+      if (shopID) {
+        adQuery += ' AND shop_id = ?';
+        adParams.push(shopID);
+      }
+
+      adQuery += ' ORDER BY date DESC';
+
+      const adDates = await this.mysqlService.query<{ date: string }>(
+        adQuery,
+        adParams,
+      );
+
+      // 查询商业分析文件已上传日期
+      let dailyQuery = `
+        SELECT DISTINCT DATE_FORMAT(date, '%Y-%m-%d') as date
+        FROM daily_product_stats
+        WHERE date IS NOT NULL
+      `;
+      const dailyParams: any[] = [];
+
+      if (shopID) {
+        dailyQuery += ' AND shop_id = ?';
+        dailyParams.push(shopID);
+      }
+
+      dailyQuery += ' ORDER BY date DESC';
+
+      const dailyDates = await this.mysqlService.query<{ date: string }>(
+        dailyQuery,
+        dailyParams,
+      );
+
+      return {
+        ad: adDates.map((item) => item.date),
+        daily: dailyDates.map((item) => item.date),
+      };
+    } catch (error) {
+      console.error('获取已上传日期列表失败:', error);
+      throw new Error(
+        `获取已上传日期列表失败：${error instanceof Error ? error.message : '未知错误'}`,
+      );
+    }
+  }
 }
