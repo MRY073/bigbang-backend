@@ -55,7 +55,7 @@ let ProductsController = class ProductsController {
                 message: 'product_id、shopID、shopName 和 stage_type 参数不能为空',
             });
         }
-        const validStageTypes = ['testing', 'potential', 'product', 'abandoned'];
+        const validStageTypes = ['testing', 'potential', 'product', 'abandoned', 'natural'];
         if (!validStageTypes.includes(stage_type)) {
             return res.status(common_1.HttpStatus.BAD_REQUEST).json({
                 success: false,

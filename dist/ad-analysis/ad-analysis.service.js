@@ -27,33 +27,24 @@ let AdAnalysisService = class AdAnalysisService {
           product_stage_start,
           product_stage_end,
           abandoned_stage_start,
-          abandoned_stage_end
+          abandoned_stage_end,
+          natural_stage_start,
+          natural_stage_end
         FROM product_items
         WHERE shop_id = ? AND product_id = ?`, [shopID, productId]);
             if (!product) {
                 return null;
             }
             const dateStr = targetDate.toISOString().split('T')[0];
-            if (product.testing_stage_start) {
-                const start = new Date(product.testing_stage_start)
+            if (product.abandoned_stage_start) {
+                const start = new Date(product.abandoned_stage_start)
                     .toISOString()
                     .split('T')[0];
-                const end = product.testing_stage_end
-                    ? new Date(product.testing_stage_end).toISOString().split('T')[0]
+                const end = product.abandoned_stage_end
+                    ? new Date(product.abandoned_stage_end).toISOString().split('T')[0]
                     : null;
                 if (dateStr >= start && (!end || dateStr <= end)) {
-                    return 'testing';
-                }
-            }
-            if (product.potential_stage_start) {
-                const start = new Date(product.potential_stage_start)
-                    .toISOString()
-                    .split('T')[0];
-                const end = product.potential_stage_end
-                    ? new Date(product.potential_stage_end).toISOString().split('T')[0]
-                    : null;
-                if (dateStr >= start && (!end || dateStr <= end)) {
-                    return 'potential';
+                    return 'abandoned';
                 }
             }
             if (product.product_stage_start) {
@@ -67,15 +58,37 @@ let AdAnalysisService = class AdAnalysisService {
                     return 'product';
                 }
             }
-            if (product.abandoned_stage_start) {
-                const start = new Date(product.abandoned_stage_start)
+            if (product.potential_stage_start) {
+                const start = new Date(product.potential_stage_start)
                     .toISOString()
                     .split('T')[0];
-                const end = product.abandoned_stage_end
-                    ? new Date(product.abandoned_stage_end).toISOString().split('T')[0]
+                const end = product.potential_stage_end
+                    ? new Date(product.potential_stage_end).toISOString().split('T')[0]
                     : null;
                 if (dateStr >= start && (!end || dateStr <= end)) {
-                    return 'abandoned';
+                    return 'potential';
+                }
+            }
+            if (product.testing_stage_start) {
+                const start = new Date(product.testing_stage_start)
+                    .toISOString()
+                    .split('T')[0];
+                const end = product.testing_stage_end
+                    ? new Date(product.testing_stage_end).toISOString().split('T')[0]
+                    : null;
+                if (dateStr >= start && (!end || dateStr <= end)) {
+                    return 'testing';
+                }
+            }
+            if (product.natural_stage_start) {
+                const start = new Date(product.natural_stage_start)
+                    .toISOString()
+                    .split('T')[0];
+                const end = product.natural_stage_end
+                    ? new Date(product.natural_stage_end).toISOString().split('T')[0]
+                    : null;
+                if (dateStr >= start && (!end || dateStr <= end)) {
+                    return 'natural';
                 }
             }
             return null;
@@ -141,16 +154,19 @@ let AdAnalysisService = class AdAnalysisService {
                     testing_stage_spend: 0,
                     potential_stage_spend: 0,
                     abandoned_stage_spend: 0,
+                    natural_stage_spend: 0,
                     no_stage_spend: 0,
                     product_stage_sales: 0,
                     testing_stage_sales: 0,
                     potential_stage_sales: 0,
                     abandoned_stage_sales: 0,
+                    natural_stage_sales: 0,
                     no_stage_sales: 0,
                     product_stage_roi: 0,
                     testing_stage_roi: 0,
                     potential_stage_roi: 0,
                     abandoned_stage_roi: 0,
+                    natural_stage_roi: 0,
                     no_stage_roi: 0,
                 });
             }
@@ -169,11 +185,13 @@ let AdAnalysisService = class AdAnalysisService {
                 testing_stage_spend: 0,
                 potential_stage_spend: 0,
                 abandoned_stage_spend: 0,
+                natural_stage_spend: 0,
                 no_stage_spend: 0,
                 product_stage_sales: 0,
                 testing_stage_sales: 0,
                 potential_stage_sales: 0,
                 abandoned_stage_sales: 0,
+                natural_stage_sales: 0,
                 no_stage_sales: 0,
             });
         }
@@ -189,16 +207,19 @@ let AdAnalysisService = class AdAnalysisService {
                     testing_stage_spend: 0,
                     potential_stage_spend: 0,
                     abandoned_stage_spend: 0,
+                    natural_stage_spend: 0,
                     no_stage_spend: 0,
                     product_stage_sales: 0,
                     testing_stage_sales: 0,
                     potential_stage_sales: 0,
                     abandoned_stage_sales: 0,
+                    natural_stage_sales: 0,
                     no_stage_sales: 0,
                     product_stage_roi: 0,
                     testing_stage_roi: 0,
                     potential_stage_roi: 0,
                     abandoned_stage_roi: 0,
+                    natural_stage_roi: 0,
                     no_stage_roi: 0,
                 });
             }
@@ -231,6 +252,10 @@ let AdAnalysisService = class AdAnalysisService {
                     dayData.abandoned_stage_spend += spend;
                     dayData.abandoned_stage_sales += sales;
                 }
+                else if (stage === 'natural') {
+                    dayData.natural_stage_spend += spend;
+                    dayData.natural_stage_sales += sales;
+                }
                 else {
                     dayData.no_stage_spend += spend;
                     dayData.no_stage_sales += sales;
@@ -251,16 +276,19 @@ let AdAnalysisService = class AdAnalysisService {
                 testing_stage_spend: Math.round(data.testing_stage_spend * 100) / 100,
                 potential_stage_spend: Math.round(data.potential_stage_spend * 100) / 100,
                 abandoned_stage_spend: Math.round(data.abandoned_stage_spend * 100) / 100,
+                natural_stage_spend: Math.round(data.natural_stage_spend * 100) / 100,
                 no_stage_spend: Math.round(data.no_stage_spend * 100) / 100,
                 product_stage_sales: Math.round(data.product_stage_sales * 100) / 100,
                 testing_stage_sales: Math.round(data.testing_stage_sales * 100) / 100,
                 potential_stage_sales: Math.round(data.potential_stage_sales * 100) / 100,
                 abandoned_stage_sales: Math.round(data.abandoned_stage_sales * 100) / 100,
+                natural_stage_sales: Math.round(data.natural_stage_sales * 100) / 100,
                 no_stage_sales: Math.round(data.no_stage_sales * 100) / 100,
                 product_stage_roi: calculateRoi(data.product_stage_spend, data.product_stage_sales),
                 testing_stage_roi: calculateRoi(data.testing_stage_spend, data.testing_stage_sales),
                 potential_stage_roi: calculateRoi(data.potential_stage_spend, data.potential_stage_sales),
                 abandoned_stage_roi: calculateRoi(data.abandoned_stage_spend, data.abandoned_stage_sales),
+                natural_stage_roi: calculateRoi(data.natural_stage_spend, data.natural_stage_sales),
                 no_stage_roi: calculateRoi(data.no_stage_spend, data.no_stage_sales),
             };
         })
@@ -336,6 +364,7 @@ let AdAnalysisService = class AdAnalysisService {
                     testing_stage: { spend: 0, sales: 0, roi: 0 },
                     potential_stage: { spend: 0, sales: 0, roi: 0 },
                     abandoned_stage: { spend: 0, sales: 0, roi: 0 },
+                    natural_stage: { spend: 0, sales: 0, roi: 0 },
                     no_stage: { spend: 0, sales: 0, roi: 0 },
                 },
             };
@@ -348,6 +377,7 @@ let AdAnalysisService = class AdAnalysisService {
             testing_stage: { spend: 0, sales: 0, roi: 0 },
             potential_stage: { spend: 0, sales: 0, roi: 0 },
             abandoned_stage: { spend: 0, sales: 0, roi: 0 },
+            natural_stage: { spend: 0, sales: 0, roi: 0 },
             no_stage: { spend: 0, sales: 0, roi: 0 },
         };
         if (!adStats || adStats.length === 0) {
@@ -383,13 +413,17 @@ let AdAnalysisService = class AdAnalysisService {
                 stageData.abandoned_stage.spend += spend;
                 stageData.abandoned_stage.sales += sales;
             }
+            else if (stage === 'natural') {
+                stageData.natural_stage.spend += spend;
+                stageData.natural_stage.sales += sales;
+            }
             else {
                 stageData.no_stage.spend += spend;
                 stageData.no_stage.sales += sales;
             }
         }
         console.log('\n--- 第四步：计算各阶段的ROI ---');
-        const stages = ['product_stage', 'testing_stage', 'potential_stage', 'abandoned_stage', 'no_stage'];
+        const stages = ['product_stage', 'testing_stage', 'potential_stage', 'abandoned_stage', 'natural_stage', 'no_stage'];
         for (const stageKey of stages) {
             const stage = stageData[stageKey];
             if (stage.spend > 0) {
@@ -410,6 +444,7 @@ let AdAnalysisService = class AdAnalysisService {
             testing_stage: stageData.testing_stage,
             potential_stage: stageData.potential_stage,
             abandoned_stage: stageData.abandoned_stage,
+            natural_stage: stageData.natural_stage,
             no_stage: stageData.no_stage,
         };
         console.log('\n=== getAdRatioByDate 函数执行完成（时间段版本）===');
@@ -457,6 +492,7 @@ let AdAnalysisService = class AdAnalysisService {
             'testing_stage',
             'potential_stage',
             'abandoned_stage',
+            'natural_stage',
             'no_stage',
         ];
         if (!validStages.includes(stage)) {
@@ -547,6 +583,7 @@ let AdAnalysisService = class AdAnalysisService {
             potential_stage: 'potential',
             product_stage: 'product',
             abandoned_stage: 'abandoned',
+            natural_stage: 'natural',
             no_stage: null,
         };
         const targetStage = stageMapping[stage];

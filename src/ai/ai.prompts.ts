@@ -84,7 +84,28 @@ export function getSystemPrompt(): string {
  * @param businessDataPrompt 业务数据层提示词（第3层）
  * @returns 完整的提示词
  */
-export function buildFullPrompt(businessDataPrompt: string): string {
-  return `${SYSTEM_PROMPT}\n\n## 业务数据（第3层）\n\n${businessDataPrompt}`;
+export interface BuildFullPromptOptions {
+  /**
+   * 补充提示词（第2.5层），用于为系统提示词和业务数据之间插入额外信息
+   */
+  supplementaryPrompt?: string | null;
 }
+
+/**
+ * 组合系统提示词、补充提示信息与业务数据提示词
+ * @param businessDataPrompt 业务数据层提示词（第3层）
+ * @param options 可选项，如补充提示词
+ * @returns 完整的提示词
+ */
+export function buildFullPrompt(
+  businessDataPrompt: string,
+  options: BuildFullPromptOptions = {},
+): string {
+  const supplementarySection = options.supplementaryPrompt
+    ? `\n\n## 补充提示信息（第2.5层）\n\n${options.supplementaryPrompt}`
+    : '';
+
+  return `${SYSTEM_PROMPT}${supplementarySection}\n\n## 业务数据（第3层）\n\n${businessDataPrompt}`;
+}
+
 

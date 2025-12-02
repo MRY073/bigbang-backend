@@ -73,7 +73,7 @@ export class ProductsController {
     }
 
     // 验证阶段类型
-    const validStageTypes = ['testing', 'potential', 'product', 'abandoned'];
+    const validStageTypes = ['testing', 'potential', 'product', 'abandoned', 'natural'];
     if (!validStageTypes.includes(stage_type)) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,

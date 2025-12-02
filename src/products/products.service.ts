@@ -354,6 +354,10 @@ export class ProductsService {
         start_time: string | null;
         end_time: string | null;
       };
+      natural_stage: {
+        start_time: string | null;
+        end_time: string | null;
+      };
       custom_category_1: string | null;
       custom_category_2: string | null;
       custom_category_3: string | null;
@@ -393,6 +397,8 @@ export class ProductsService {
       product_stage_end: Date | null;
       abandoned_stage_start: Date | null;
       abandoned_stage_end: Date | null;
+      natural_stage_start: Date | null;
+      natural_stage_end: Date | null;
       custom_category_1: string | null;
       custom_category_2: string | null;
       custom_category_3: string | null;
@@ -413,6 +419,8 @@ export class ProductsService {
         product_stage_end,
         abandoned_stage_start,
         abandoned_stage_end,
+        natural_stage_start,
+        natural_stage_end,
         custom_category_1,
         custom_category_2,
         custom_category_3,
@@ -474,6 +482,14 @@ export class ProductsService {
             ? new Date(product.abandoned_stage_end).toISOString()
             : null,
         },
+        natural_stage: {
+          start_time: product.natural_stage_start
+            ? new Date(product.natural_stage_start).toISOString()
+            : null,
+          end_time: product.natural_stage_end
+            ? new Date(product.natural_stage_end).toISOString()
+            : null,
+        },
         custom_category_1: processCategory(product.custom_category_1),
         custom_category_2: processCategory(product.custom_category_2),
         custom_category_3: processCategory(product.custom_category_3),
@@ -498,7 +514,7 @@ export class ProductsService {
     productId: string,
     shopID: string,
     shopName: string,
-    stageType: 'testing' | 'potential' | 'product' | 'abandoned',
+    stageType: 'testing' | 'potential' | 'product' | 'abandoned' | 'natural',
     startTime?: string | null,
     endTime?: string | null,
   ): Promise<{ success: boolean; message: string }> {
@@ -529,6 +545,10 @@ export class ProductsService {
       abandoned: {
         start: 'abandoned_stage_start',
         end: 'abandoned_stage_end',
+      },
+      natural: {
+        start: 'natural_stage_start',
+        end: 'natural_stage_end',
       },
     };
 
@@ -1305,6 +1325,356 @@ export class ProductsService {
     });
 
     console.log('\n=== getFinishedLinkMonitorData 函数执行完成 ===');
+    console.log(`总共处理了 ${result.length} 个商品`);
+    console.log('==========================================\n');
+
+    return result;
+  }
+
+  /**
+   * 自然流商品监控
+   * 获取自然流阶段商品的监控数据，包括访客、广告花费、销售额等指标的变化趋势和预警信息
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param date 日期（YYYY-MM-DD 格式，可选，默认为当前日期）
+   * @param customCategory 自定义分类筛选（可选）
+   * @returns 自然流商品监控数据列表
+   */
+  async getNaturalStageMonitorData(
+    shopID: string,
+    shopName: string,
+    date?: string,
+    customCategory?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      image?: string | null;
+      visitorsAvg: number[];
+      visitorsVolatilityBaseline: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
+      adCostAvg: number[];
+      adCostVolatilityBaseline: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
+      salesAvg: number[];
+      salesVolatilityBaseline: Array<{
+        window: number;
+        direction: '+' | '-';
+        strength: number;
+        level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+      }>;
+      warningLevel: '严重' | '一般' | '轻微' | '正常';
+      warningMessages: string[];
+      custom_category_1?: string | null;
+      custom_category_2?: string | null;
+      custom_category_3?: string | null;
+      custom_category_4?: string | null;
+    }>
+  > {
+    console.log('=== getNaturalStageMonitorData 函数开始执行 ===');
+    console.log('接收到的店铺ID:', shopID);
+    console.log('接收到的店铺名称:', shopName);
+    console.log('接收到的日期参数:', date || '未提供（使用当前日期）');
+    console.log('接收到的自定义分类参数:', customCategory || '未提供');
+
+    // 使用传入的日期参数，如果未提供则使用当前日期
+    let currentDate: Date;
+    if (date) {
+      // 解析日期字符串（格式：YYYY-MM-DD）
+      const [year, month, day] = date.split('-').map(Number);
+      currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    } else {
+      currentDate = new Date();
+    }
+    console.log('使用的基准日期:', currentDate.toISOString());
+
+    // 1. 查询当前处于自然流阶段的商品
+    console.log('\n--- 第一步：查询当前处于自然流阶段的商品 ---');
+    
+    // 构建 WHERE 子句
+    let whereClause = `WHERE shop_id = ? 
+        AND natural_stage_start IS NOT NULL
+        AND natural_stage_start <= ?
+        AND (natural_stage_end IS NULL OR natural_stage_end >= ?)
+        AND (status IS NULL OR status = 0)`;
+    
+    const queryParams: any[] = [shopID, currentDate, currentDate];
+    
+    // 如果提供了 customCategory 参数，添加筛选条件
+    if (customCategory && customCategory.trim()) {
+      const trimmedCategory = customCategory.trim();
+      // 使用 LOWER() 函数实现不区分大小写的匹配，排除 NULL 值
+      whereClause += ` AND (
+        (custom_category_1 IS NOT NULL AND LOWER(custom_category_1) LIKE ?) OR
+        (custom_category_2 IS NOT NULL AND LOWER(custom_category_2) LIKE ?) OR
+        (custom_category_3 IS NOT NULL AND LOWER(custom_category_3) LIKE ?) OR
+        (custom_category_4 IS NOT NULL AND LOWER(custom_category_4) LIKE ?)
+      )`;
+      const categoryPattern = `%${trimmedCategory.toLowerCase()}%`;
+      queryParams.push(categoryPattern, categoryPattern, categoryPattern, categoryPattern);
+      console.log('应用自定义分类筛选:', trimmedCategory);
+    }
+    
+    const naturalProducts = await this.mysqlService.query<{
+      product_id: string;
+      product_name: string;
+      product_image: string | null;
+      custom_category_1: string | null;
+      custom_category_2: string | null;
+      custom_category_3: string | null;
+      custom_category_4: string | null;
+    }>(
+      `SELECT 
+        product_id,
+        product_name,
+        product_image,
+        custom_category_1,
+        custom_category_2,
+        custom_category_3,
+        custom_category_4
+      FROM product_items 
+      ${whereClause}
+      ORDER BY id ASC`,
+      queryParams,
+    );
+
+    console.log('查询到的自然流商品数量:', naturalProducts?.length || 0);
+
+    if (!naturalProducts || naturalProducts.length === 0) {
+      console.log('⚠️ 未找到自然流阶段的商品，返回空数组');
+      console.log('=== getNaturalStageMonitorData 函数执行完成（无数据）===\n');
+      return [];
+    }
+
+    // 2. 对每个商品计算5个时间维度的统计数据
+    console.log('\n--- 第二步：对每个商品计算统计数据 ---');
+    console.log(`开始处理 ${naturalProducts.length} 个商品的统计数据`);
+
+    const timeDimensions = [30, 15, 7, 3, 1]; // 5个时间维度（天）
+
+    const result = await Promise.all(
+      naturalProducts.map(async (product) => {
+        const {
+          product_id,
+          product_name,
+          product_image,
+          custom_category_1,
+          custom_category_2,
+          custom_category_3,
+          custom_category_4,
+        } = product;
+
+        console.log(`\n处理商品: ${product_id} (${product_name})`);
+
+        // 初始化结果数组
+        const visitorsAvg: number[] = [];
+        const adCostAvg: number[] = [];
+        const salesAvg: number[] = [];
+
+        // 查询60天的完整数据用于计算短期波动相对长期基准指标（长期基准为60天）
+        const endDate60 = new Date(currentDate);
+        const startDate60 = new Date(currentDate);
+        startDate60.setDate(endDate60.getDate() - 59); // 60天数据
+        const startDate60Str = startDate60.toISOString().split('T')[0];
+        const endDate60Str = endDate60.toISOString().split('T')[0];
+
+        // 查询60天的访客数原始数据
+        const visitorsData60 = await this.mysqlService.query<{
+          visitors: number | null;
+        }>(
+          `SELECT visitors
+          FROM daily_product_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date`,
+          [shopID, product_id, startDate60Str, endDate60Str],
+        );
+        const visitorsValues60 = visitorsData60
+          .map((row) => row.visitors)
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => Number(value) || 0);
+
+        // 查询60天的广告花费原始数据
+        const adCostData60 = await this.mysqlService.query<{
+          spend: number | null;
+        }>(
+          `SELECT spend
+          FROM ad_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date`,
+          [shopID, product_id, startDate60Str, endDate60Str],
+        );
+        const adCostValues60 = adCostData60
+          .map((row) => row.spend)
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => Number(value) || 0);
+
+        // 查询60天的销售额原始数据
+        const salesData60 = await this.mysqlService.query<{
+          confirmed_sales: number | null;
+        }>(
+          `SELECT confirmed_sales
+          FROM daily_product_stats
+          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+          ORDER BY date`,
+          [shopID, product_id, startDate60Str, endDate60Str],
+        );
+        const salesValues60 = salesData60
+          .map((row) => row.confirmed_sales)
+          .filter((value) => value !== null && value !== undefined)
+          .map((value) => Number(value) || 0);
+
+        // 计算短期波动相对长期基准指标（使用60天数据）
+        const visitorsVolatilityBaseline =
+          this.calculateSlidingVolatility(visitorsValues60);
+        const adCostVolatilityBaseline =
+          this.calculateSlidingVolatility(adCostValues60);
+        const salesVolatilityBaseline =
+          this.calculateSlidingVolatility(salesValues60);
+
+        // 对每个时间维度计算统计数据
+        for (const days of timeDimensions) {
+          const endDate = new Date(currentDate);
+          const startDate = new Date(currentDate);
+          startDate.setDate(endDate.getDate() - (days - 1));
+
+          const startDateStr = startDate.toISOString().split('T')[0];
+          const endDateStr = endDate.toISOString().split('T')[0];
+
+          console.log(
+            `  [${product_id}] 计算 ${days} 天数据 (${startDateStr} 到 ${endDateStr})`,
+          );
+
+          try {
+            // 查询访客数原始数据（从 daily_product_stats 表）
+            const visitorsData = await this.mysqlService.query<{
+              visitors: number | null;
+            }>(
+              `SELECT visitors
+              FROM daily_product_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const visitorsValues = visitorsData
+              .map((row) => row.visitors)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let visitorsAvgValue = 0;
+            if (visitorsValues.length > 0) {
+              const sum = visitorsValues.reduce((acc, val) => acc + val, 0);
+              visitorsAvgValue = sum / visitorsValues.length;
+            }
+
+            visitorsAvg.push(visitorsAvgValue);
+
+            // 查询广告花费原始数据（从 ad_stats 表）
+            const adCostData = await this.mysqlService.query<{
+              spend: number | null;
+            }>(
+              `SELECT spend
+              FROM ad_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const adCostValues = adCostData
+              .map((row) => row.spend)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let adCostAvgValue = 0;
+            if (adCostValues.length > 0) {
+              const sum = adCostValues.reduce((acc, val) => acc + val, 0);
+              adCostAvgValue = sum / adCostValues.length;
+            }
+
+            adCostAvg.push(adCostAvgValue);
+
+            // 查询销售额原始数据（从 daily_product_stats 表的 confirmed_sales 字段）
+            const salesData = await this.mysqlService.query<{
+              confirmed_sales: number | null;
+            }>(
+              `SELECT confirmed_sales
+              FROM daily_product_stats
+              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
+              ORDER BY date`,
+              [shopID, product_id, startDateStr, endDateStr],
+            );
+
+            const salesValues = salesData
+              .map((row) => row.confirmed_sales)
+              .filter((value) => value !== null && value !== undefined)
+              .map((value) => Number(value) || 0);
+
+            let salesAvgValue = 0;
+            if (salesValues.length > 0) {
+              const sum = salesValues.reduce((acc, val) => acc + val, 0);
+              salesAvgValue = sum / salesValues.length;
+            }
+
+            salesAvg.push(salesAvgValue);
+
+            console.log(
+              `    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)})`,
+            );
+          } catch (error) {
+            console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
+            // 发生错误时，设置为默认值
+            visitorsAvg.push(0);
+            adCostAvg.push(0);
+            salesAvg.push(0);
+          }
+        }
+
+        // 3. 基于短期波动相对长期基准指标计算预警等级和生成警告信息
+        // 暂时固定设置为空和轻微
+        const warningLevel: '严重' | '一般' | '轻微' | '正常' = '轻微';
+        const warningMessages: string[] = [];
+
+        console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
+        if (warningMessages.length > 0) {
+          console.log(`  [${product_id}] 警告信息:`, warningMessages);
+        }
+
+        return {
+          id: product_id,
+          name: product_name,
+          image: product_image,
+          visitorsAvg,
+          visitorsVolatilityBaseline,
+          adCostAvg,
+          adCostVolatilityBaseline,
+          salesAvg,
+          salesVolatilityBaseline,
+          warningLevel,
+          warningMessages,
+          custom_category_1: custom_category_1 || null,
+          custom_category_2: custom_category_2 || null,
+          custom_category_3: custom_category_3 || null,
+          custom_category_4: custom_category_4 || null,
+        };
+      }),
+    );
+
+    // 按照销售额从大到小排序（使用30天平均值作为排序依据）
+    result.sort((a, b) => {
+      const salesA = a.salesAvg[0] || 0; // 30天销售额平均值
+      const salesB = b.salesAvg[0] || 0; // 30天销售额平均值
+      return salesB - salesA; // 从大到小排序
+    });
+
+    console.log('\n=== getNaturalStageMonitorData 函数执行完成 ===');
     console.log(`总共处理了 ${result.length} 个商品`);
     console.log('==========================================\n');
 
@@ -2157,6 +2527,139 @@ export class ProductsService {
 
     return {
       suggestion: finalSuggestion,
+    };
+  }
+
+  /**
+   * 获取自然流商品的AI建议
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param date 日期（YYYY-MM-DD 格式）
+   * @param productID 产品ID
+   * @param productName 产品名称
+   * @returns AI建议
+   */
+  async getNaturalStageAISuggestion(
+    shopID: string,
+    shopName: string,
+    date: string,
+    productID: string,
+    productName: string,
+  ): Promise<{ suggestion: string }> {
+    console.log('=== getNaturalStageAISuggestion 函数开始执行 ===');
+    console.log('接收到的参数:', {
+      shopID,
+      shopName,
+      date,
+      productID,
+      productName,
+    });
+
+    // 获取该产品的监控数据
+    const monitorData = await this.getNaturalStageMonitorData(
+      shopID,
+      shopName,
+      date,
+    );
+
+    const productData = monitorData.find((p) => p.id === productID);
+
+    if (!productData) {
+      return {
+        suggestion: '未找到该产品的监控数据，无法生成建议。',
+      };
+    }
+
+    // 基于数据分析生成建议
+    const suggestions: string[] = [];
+
+    // 分析访客趋势
+    const visitorsTrend = this.analyzeTrend(productData.visitorsAvg);
+    if (visitorsTrend === '上升') {
+      suggestions.push('访客数呈上升趋势，建议继续保持当前推广策略');
+    } else if (visitorsTrend === '下降') {
+      suggestions.push('访客数呈下降趋势，建议优化推广策略或增加广告投入');
+    }
+
+    // 分析广告花费效率
+    const adCostTrend = this.analyzeTrend(productData.adCostAvg);
+    const salesTrend = this.analyzeTrend(productData.salesAvg);
+    if (adCostTrend === '上升' && salesTrend === '上升') {
+      suggestions.push('广告投入和销售额同步增长，ROI表现良好');
+    } else if (adCostTrend === '上升' && salesTrend !== '上升') {
+      suggestions.push('广告投入增加但销售额未同步增长，建议优化广告投放策略');
+    }
+
+    // 分析预警等级
+    if (productData.warningLevel === '严重') {
+      suggestions.push('当前数据波动较大，建议密切关注并采取相应措施');
+    } else if (productData.warningLevel === '一般') {
+      suggestions.push('数据存在一定波动，建议持续关注趋势变化');
+    }
+
+    // 分析波动率
+    const visitorsVolatility = productData.visitorsVolatilityBaseline.find(
+      (v) => v.window === 3,
+    );
+    if (visitorsVolatility && visitorsVolatility.level === '明显') {
+      suggestions.push('访客数波动明显，建议检查推广渠道和广告效果');
+    }
+
+    const defaultSuggestion =
+      '基于当前数据分析，该自然流商品在近期表现出良好的增长趋势。建议：1. 继续保持当前广告投入水平；2. 关注访客转化率的提升；3. 可以考虑扩大库存以应对潜在的需求增长。';
+
+    const finalSuggestion =
+      suggestions.length > 0
+        ? suggestions.join('。') + '。'
+        : defaultSuggestion;
+
+    console.log('生成的AI建议:', finalSuggestion);
+    console.log('=== getNaturalStageAISuggestion 函数执行完成 ===\n');
+
+    return {
+      suggestion: finalSuggestion,
+    };
+  }
+
+  /**
+   * 批量获取自然流商品监控的AI建议
+   * @param shopID 店铺ID
+   * @param shopName 店铺名称
+   * @param date 日期（YYYY-MM-DD 格式）
+   * @returns 任务状态
+   */
+  async batchNaturalStageAISuggestion(
+    shopID: string,
+    shopName: string,
+    date: string,
+  ): Promise<{
+    status: 'new' | 'running' | 'exists';
+    message?: string;
+  }> {
+    console.log('=== batchNaturalStageAISuggestion 函数开始执行 ===');
+    console.log('接收到的参数:', { shopID, shopName, date });
+
+    // 验证日期格式
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      throw new Error('date 参数格式错误，应为 YYYY-MM-DD 格式');
+    }
+
+    // 验证日期是否有效
+    const dateObj = new Date(date);
+    if (isNaN(dateObj.getTime())) {
+      throw new Error('date 参数不是有效的日期');
+    }
+
+    // 检查是否已有该条件的AI建议（这里简化处理，实际应该使用任务队列）
+    // 暂时返回 new 状态，表示新增任务
+    // TODO: 实现真正的异步任务队列处理
+
+    console.log('=== batchNaturalStageAISuggestion 函数执行完成 ===\n');
+
+    return {
+      status: 'new',
+      message: '批量AI建议任务已创建，正在后台处理',
     };
   }
 

@@ -13,7 +13,8 @@ let AiService = class AiService {
     getSystemPrompt() {
         return (0, ai_prompts_1.getSystemPrompt)();
     }
-    buildPrompt(businessData, format = 'text') {
+    buildPrompt(businessData, options = {}) {
+        const { format = 'text', supplementaryPrompt } = options;
         let businessDataPrompt = '';
         if (typeof businessData === 'string') {
             businessDataPrompt = businessData;
@@ -21,15 +22,13 @@ let AiService = class AiService {
         else {
             businessDataPrompt = JSON.stringify(businessData, null, 2);
         }
-        let formatNote = '';
-        if (format === 'json') {
-            formatNote = '\n\n【注意：以下数据为 JSON 格式，请仔细解析】';
-        }
-        else if (format === 'csv') {
-            formatNote = '\n\n【注意：以下数据为 CSV 格式，请仔细解析】';
-        }
-        const fullBusinessPrompt = `${formatNote}\n${businessDataPrompt}`;
-        return (0, ai_prompts_1.buildFullPrompt)(fullBusinessPrompt);
+        const formatNote = this.buildFormatNote(format);
+        const fullBusinessPrompt = formatNote
+            ? `${formatNote}\n\n${businessDataPrompt}`
+            : businessDataPrompt;
+        return (0, ai_prompts_1.buildFullPrompt)(fullBusinessPrompt, {
+            supplementaryPrompt: this.normalizeSupplementaryPrompt(supplementaryPrompt),
+        });
     }
     buildAnalysisPrompt(params) {
         const parts = [];
@@ -57,8 +56,44 @@ let AiService = class AiService {
         if (params.context) {
             parts.push(`## 其他上下文信息\n\n${params.context}\n`);
         }
+        const formatNote = this.buildFormatNote(params.format);
+        if (formatNote) {
+            parts.unshift(formatNote);
+        }
         const businessDataPrompt = parts.join('\n');
-        return (0, ai_prompts_1.buildFullPrompt)(businessDataPrompt);
+        return (0, ai_prompts_1.buildFullPrompt)(businessDataPrompt, {
+            supplementaryPrompt: this.normalizeSupplementaryPrompt(params.supplementaryPrompt),
+        });
+    }
+    normalizeSupplementaryPrompt(supplementaryPrompt) {
+        if (!supplementaryPrompt) {
+            return null;
+        }
+        if (typeof supplementaryPrompt === 'string') {
+            return supplementaryPrompt.trim() || null;
+        }
+        if (Array.isArray(supplementaryPrompt)) {
+            const merged = supplementaryPrompt.filter(Boolean).join('\n');
+            return merged ? merged : null;
+        }
+        try {
+            return JSON.stringify(supplementaryPrompt, null, 2);
+        }
+        catch {
+            return null;
+        }
+    }
+    buildFormatNote(format) {
+        if (!format || format === 'text') {
+            return null;
+        }
+        if (format === 'json') {
+            return '【注意：以下数据为 JSON 格式，请仔细解析】';
+        }
+        if (format === 'csv') {
+            return '【注意：以下数据为 CSV 格式，请仔细解析】';
+        }
+        return null;
     }
 };
 exports.AiService = AiService;

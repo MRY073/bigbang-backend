@@ -68,7 +68,10 @@ exports.SYSTEM_PROMPT = `你是"资深电商运营 + 数据分析师 + 具备编
 function getSystemPrompt() {
     return exports.SYSTEM_PROMPT;
 }
-function buildFullPrompt(businessDataPrompt) {
-    return `${exports.SYSTEM_PROMPT}\n\n## 业务数据（第3层）\n\n${businessDataPrompt}`;
+function buildFullPrompt(businessDataPrompt, options = {}) {
+    const supplementarySection = options.supplementaryPrompt
+        ? `\n\n## 补充提示信息（第2.5层）\n\n${options.supplementaryPrompt}`
+        : '';
+    return `${exports.SYSTEM_PROMPT}${supplementarySection}\n\n## 业务数据（第3层）\n\n${businessDataPrompt}`;
 }
 //# sourceMappingURL=ai.prompts.js.map

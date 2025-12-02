@@ -1,129 +1,105 @@
 # AI 模块
 
-本模块实现了电商数据分析系统的 AI 支持架构。
+本模块实现了电商数据分析系统的 AI 支持架构（提示词 → 模型调用 → 数据缓存）。
 
 ## 架构说明
 
-系统采用三层架构：
+### 第 1 层：接口层（`AiGatewayService`）
+- 统一封装 AI 调用（当前接入 DeepSeek，未来可扩展更多 Provider）
+- 负责模型路由、错误治理、数据落库与缓存
+- 默认以「链接 + 日期」为粒度缓存，重复调用直接命中数据库
 
-### 第 1 层：接口层（不在本模块）
-- 功能：通过 MCP 从不同数据源获取数据 → 将数据传入第 3 层 → 调用 GPT-40 → 返回结果给前端
-- 不包含提示词逻辑
+### 第 2 层：系统级提示词
+- **位置**：`ai.prompts.ts` 的 `SYSTEM_PROMPT`
+- 每次调用自动附加角色设定、输出规范、分析流程
 
-### 第 2 层：系统级提示词（本模块的核心）
-- **位置**：`ai.prompts.ts` 中的 `SYSTEM_PROMPT`
-- **特点**：写死在后台，每次调用都自动加入
-- **内容**：定义 AI 的角色、风格、分析要求、输出规范等
+### 第 2.5 层：补充提示词
+- **入口**：`AiService.buildPrompt/buildAnalysisPrompt` 的 `supplementaryPrompt`
+- 支持 `string | string[] | object`
+- 用于在系统提示词与业务数据之间注入一次性说明、检查项等
 
-### 第 3 层：业务数据层（动态输入）
-- 由调用方传入，包括：
-  - 3~30 天广告数据
-  - Shopee 导出的 CSV 内容
-  - 链接特征（类目、客单价、上新时间、图片、卖点等）
-  - 需要解决的问题（如"帮我分析下这个广告最近为什么掉了"）
+### 第 3 层：业务数据层
+- 调用方动态传入（广告数据、Shopee 导出、产品特征、问题描述等）
 
-## 使用方法
+## 快速开始
 
-### 1. 获取系统提示词
-
-```typescript
-import { AiService } from './ai/ai.service';
-
-// 在服务中注入
-constructor(private readonly aiService: AiService) {}
-
-// 获取系统提示词
-const systemPrompt = this.aiService.getSystemPrompt();
-```
-
-### 2. 构建完整提示词
+### 1. 借助 `AiGatewayService` 完成调用 + 缓存
 
 ```typescript
-// 方式1：直接传入业务数据字符串
-const fullPrompt = this.aiService.buildPrompt(
-  '这里是广告数据...',
-  'text'
-);
+import { AiGatewayService } from './ai/ai-gateway.service';
+import { AiProviderKey } from './ai/providers/ai-provider.interface';
 
-// 方式2：传入对象（会自动转换为 JSON）
-const fullPrompt = this.aiService.buildPrompt(
-  { adData: [...], productData: {...} },
-  'json'
-);
+constructor(private readonly aiGateway: AiGatewayService) {}
 
-// 方式3：使用结构化方法
-const fullPrompt = this.aiService.buildAnalysisPrompt({
-  question: '帮我分析下这个广告最近为什么掉了',
-  adData: { /* 广告数据 */ },
-  productData: { /* 产品数据 */ },
-  context: '其他上下文信息'
-});
-```
-
-### 3. 在第 1 层调用 GPT-40
-
-```typescript
-// 示例：在第1层（接口层）调用
-async callGPT40(businessData: any) {
-  // 1. 使用 AI 服务构建完整提示词
-  const fullPrompt = this.aiService.buildAnalysisPrompt({
-    question: '分析广告数据',
-    adData: businessData,
+async analyzeLink() {
+  const response = await this.aiGateway.requestAnalysis({
+    linkId: '123456',
+    shopId: 'shop-001',
+    question: '最近 7 天广告成本为什么飙升？',
+    adData: recentAdStats,
+    supplementaryPrompt: {
+      reviewer: '运营-小张',
+      note: '重点关注访客来源波动',
+    },
+    provider: AiProviderKey.DEEPSEEK,
   });
 
-  // 2. 调用 GPT-40 API（这里需要实际的 API 调用代码）
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o', // 或其他 GPT-40 模型
-    messages: [
-      {
-        role: 'system',
-        content: this.aiService.getSystemPrompt(), // 系统提示词
-      },
-      {
-        role: 'user',
-        content: businessData, // 业务数据
-      },
-    ],
-  });
-
-  return response.choices[0].message.content;
+  return response.result; // 如果同一天已计算过，会直接返回缓存
 }
 ```
 
-## 文件说明
+> `forceRefresh: true` 可跳过缓存并重算。
 
-- `ai.prompts.ts`: 系统级提示词定义
-- `ai.service.ts`: AI 服务，提供提示词组合方法
-- `ai.module.ts`: NestJS 模块配置
-- `dto/analysis-request.dto.ts`: 请求和响应 DTO 定义
+### 2. 仍可单独使用提示词组合服务
 
-## 注意事项
+```typescript
+const systemPrompt = this.aiService.getSystemPrompt();
 
-1. **系统提示词修改**：如需修改系统提示词，请编辑 `ai.prompts.ts` 中的 `SYSTEM_PROMPT` 常量
+const promptA = this.aiService.buildPrompt('数据...', {
+  format: 'text',
+  supplementaryPrompt: '额外上下文',
+});
 
-2. **数据格式**：支持 JSON、文本、CSV 三种格式，使用 `buildPrompt` 方法时指定 `format` 参数
+const promptB = this.aiService.buildAnalysisPrompt({
+  question: '帮我分析...',
+  adData: { ... },
+  productData: { ... },
+  context: '其他信息',
+  supplementaryPrompt: ['使用 JSON 输出', '附带关键结论 TL;DR'],
+});
+```
 
-3. **模块导入**：在需要使用 AI 服务的模块中，导入 `AiModule`：
+## 数据落库存储
+
+- 新增表：`link_ai_prompt_logs`（见 `migrations/create_link_ai_prompt_logs.sql`）
+- 关键字段：链接 ID、日期、模型、提示词哈希、补充信息、业务载荷、AI 响应、token 统计、错误信息等
+- 每条链接每天仅存一条记录，方便追溯和手工复盘
+
+## 文件导航
+
+- `ai-gateway.service.ts`：统一调用、缓存、落库
+- `ai-prompt-cache.service.ts`：数据读写
+- `providers/*`：AI Provider 接口与 DeepSeek 实现
+- `ai.service.ts`：提示词组合（系统层 + 补充层 + 业务层）
+- `ai.prompts.ts`：系统提示词
+- `dto/*`：请求/响应 DTO
+
+## 模块导入
 
 ```typescript
 import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [AiModule],
-  // ...
 })
+export class XxxModule {}
 ```
 
-## 扩展
+## 扩展能力
 
-如果需要在第 1 层实现实际的 GPT API 调用，可以：
+- 接入新模型：实现 `AiProvider`，在 `AiProviderRegistry` 注册即可
+- 缓存策略：基于 `AiPromptCacheService` 可做后台审计、手动重刷等
+- 输出格式：通过 `responseFormat` 指定 `json`/`text`
+- 补充信息：`supplementaryPrompt` 支持字符串、数组、对象自动格式化
 
-1. 安装 OpenAI SDK：
-```bash
-npm install openai
-```
-
-2. 在 `ai.service.ts` 中添加实际的 API 调用方法
-3. 配置环境变量存储 API Key
-4. 添加错误处理和重试逻辑
 

@@ -31,6 +31,12 @@
 $ npm install
 ```
 
+## 环境变量（DeepSeek）
+
+1. 复制 `docs/env.sample` 为根目录下的 `.env` 文件。
+2. 将你的 DeepSeek API Key 写入 `DEEPSEEK_API_KEY`。
+3. 在业务代码中通过 `getDeepseekConfig()`（见 `src/config/deepseek.config.ts`）获取统一的 Key，避免在各个模块里直接访问 `process.env`。
+
 ## Compile and run the project
 
 ```bash

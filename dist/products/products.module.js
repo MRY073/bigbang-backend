@@ -12,6 +12,7 @@ const products_controller_1 = require("./products.controller");
 const products_service_1 = require("./products.service");
 const finished_link_monitor_controller_1 = require("./finished-link-monitor.controller");
 const potential_link_monitor_controller_1 = require("./potential-link-monitor.controller");
+const natural_stage_monitor_controller_1 = require("./natural-stage-monitor.controller");
 const product_items_controller_1 = require("./product-items.controller");
 const auth_module_1 = require("../auth/auth.module");
 let ProductsModule = class ProductsModule {
@@ -24,6 +25,7 @@ exports.ProductsModule = ProductsModule = __decorate([
             products_controller_1.ProductsController,
             finished_link_monitor_controller_1.FinishedLinkMonitorController,
             potential_link_monitor_controller_1.PotentialLinkMonitorController,
+            natural_stage_monitor_controller_1.NaturalStageMonitorController,
             product_items_controller_1.ProductItemsController,
         ],
         providers: [products_service_1.ProductsService],

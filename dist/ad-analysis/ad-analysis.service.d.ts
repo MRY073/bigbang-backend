@@ -9,16 +9,19 @@ export declare class AdAnalysisService {
         testing_stage_spend?: number;
         potential_stage_spend?: number;
         abandoned_stage_spend?: number;
+        natural_stage_spend?: number;
         no_stage_spend?: number;
         product_stage_sales?: number;
         testing_stage_sales?: number;
         potential_stage_sales?: number;
         abandoned_stage_sales?: number;
+        natural_stage_sales?: number;
         no_stage_sales?: number;
         product_stage_roi?: number;
         testing_stage_roi?: number;
         potential_stage_roi?: number;
         abandoned_stage_roi?: number;
+        natural_stage_roi?: number;
         no_stage_roi?: number;
     }>>;
     getAdRatioByDate(shopID: string, startDate: string, endDate: string, shopName?: string, customCategory?: string): Promise<{
@@ -39,6 +42,11 @@ export declare class AdAnalysisService {
                 roi: number;
             };
             abandoned_stage?: {
+                spend: number;
+                sales: number;
+                roi: number;
+            };
+            natural_stage?: {
                 spend: number;
                 sales: number;
                 roi: number;

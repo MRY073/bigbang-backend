@@ -3,7 +3,7 @@ export class UpdateStageDto {
   product_id: string; // 产品ID
   shopID: string; // 店铺ID
   shopName: string; // 店铺名称
-  stage_type: 'testing' | 'potential' | 'product' | 'abandoned'; // 阶段类型
+  stage_type: 'testing' | 'potential' | 'product' | 'abandoned' | 'natural'; // 阶段类型
   start_time?: string | null; // 开始时间（ISO 8601 格式，可为空）
   end_time?: string | null; // 结束时间（ISO 8601 格式，可为空）
 }

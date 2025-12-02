@@ -117,3 +117,61 @@ SHOW COLUMNS FROM product_items LIKE 'prompt_note';
 
 如果看到 `prompt_note` 字段，说明迁移成功。
 
+## 添加自然流阶段字段
+
+需要在数据库中执行以下 SQL 语句来添加 `natural_stage_start` 和 `natural_stage_end` 字段：
+
+```sql
+-- 添加自然流阶段字段
+ALTER TABLE product_items 
+  ADD COLUMN natural_stage_start DATETIME DEFAULT NULL COMMENT '自然流阶段开始时间',
+  ADD COLUMN natural_stage_end DATETIME DEFAULT NULL COMMENT '自然流阶段结束时间';
+```
+
+### 执行方式
+
+#### 方式一：使用 MySQL 命令行
+
+```bash
+mysql -u root -p bigbangShopee < migrations/add_natural_stage_fields.sql
+```
+
+#### 方式二：直接在 MySQL 客户端执行
+
+1. 连接到数据库：
+```bash
+mysql -u root -p
+```
+
+2. 选择数据库：
+```sql
+USE bigbangShopee;
+```
+
+3. 执行 SQL：
+```sql
+ALTER TABLE product_items 
+  ADD COLUMN natural_stage_start DATETIME DEFAULT NULL COMMENT '自然流阶段开始时间',
+  ADD COLUMN natural_stage_end DATETIME DEFAULT NULL COMMENT '自然流阶段结束时间';
+```
+
+#### 方式三：使用数据库管理工具
+
+在 Navicat、phpMyAdmin、DBeaver 等工具中，直接执行 `migrations/add_natural_stage_fields.sql` 文件中的 SQL 语句。
+
+### 验证
+
+执行后可以通过以下 SQL 验证字段是否添加成功：
+
+```sql
+DESCRIBE product_items;
+```
+
+或者：
+
+```sql
+SHOW COLUMNS FROM product_items LIKE 'natural_stage%';
+```
+
+如果看到 `natural_stage_start` 和 `natural_stage_end` 字段，说明迁移成功。
+

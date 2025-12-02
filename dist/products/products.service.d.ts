@@ -25,6 +25,10 @@ export declare class ProductsService {
             start_time: string | null;
             end_time: string | null;
         };
+        natural_stage: {
+            start_time: string | null;
+            end_time: string | null;
+        };
         custom_category_1: string | null;
         custom_category_2: string | null;
         custom_category_3: string | null;
@@ -33,7 +37,7 @@ export declare class ProductsService {
         competitor_link: string | null;
         competitor_daily_sales: string | null;
     }>>;
-    updateProductStage(productId: string, shopID: string, shopName: string, stageType: 'testing' | 'potential' | 'product' | 'abandoned', startTime?: string | null, endTime?: string | null): Promise<{
+    updateProductStage(productId: string, shopID: string, shopName: string, stageType: 'testing' | 'potential' | 'product' | 'abandoned' | 'natural', startTime?: string | null, endTime?: string | null): Promise<{
         success: boolean;
         message: string;
     }>;
@@ -48,6 +52,38 @@ export declare class ProductsService {
     }>>;
     getCustomCategories(shopID: string): Promise<string[]>;
     getFinishedLinkMonitorData(shopID: string, shopName: string, date?: string, customCategory?: string): Promise<Array<{
+        id: string;
+        name: string;
+        image?: string | null;
+        visitorsAvg: number[];
+        visitorsVolatilityBaseline: Array<{
+            window: number;
+            direction: '+' | '-';
+            strength: number;
+            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+        }>;
+        adCostAvg: number[];
+        adCostVolatilityBaseline: Array<{
+            window: number;
+            direction: '+' | '-';
+            strength: number;
+            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+        }>;
+        salesAvg: number[];
+        salesVolatilityBaseline: Array<{
+            window: number;
+            direction: '+' | '-';
+            strength: number;
+            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+        }>;
+        warningLevel: '严重' | '一般' | '轻微' | '正常';
+        warningMessages: string[];
+        custom_category_1?: string | null;
+        custom_category_2?: string | null;
+        custom_category_3?: string | null;
+        custom_category_4?: string | null;
+    }>>;
+    getNaturalStageMonitorData(shopID: string, shopName: string, date?: string, customCategory?: string): Promise<Array<{
         id: string;
         name: string;
         image?: string | null;
@@ -116,6 +152,13 @@ export declare class ProductsService {
     private calculateWarningLevelFromCV;
     getPotentialLinkAISuggestion(shopID: string, shopName: string, date: string, productID: string, productName: string): Promise<{
         suggestion: string;
+    }>;
+    getNaturalStageAISuggestion(shopID: string, shopName: string, date: string, productID: string, productName: string): Promise<{
+        suggestion: string;
+    }>;
+    batchNaturalStageAISuggestion(shopID: string, shopName: string, date: string): Promise<{
+        status: 'new' | 'running' | 'exists';
+        message?: string;
     }>;
     private analyzeTrend;
     getProductItems(shopID: string, shopName: string, page?: number, pageSize?: number, customCategory?: string): Promise<{

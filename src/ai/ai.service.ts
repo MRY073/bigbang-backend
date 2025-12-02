@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { getSystemPrompt, buildFullPrompt } from './ai.prompts';
 
+type SupplementaryPromptInput =
+  | string
+  | string[]
+  | Record<string, any>
+  | null
+  | undefined;
+
 /**
  * AI 服务
  * 负责组合系统级提示词（第2层）和业务数据（第3层）
@@ -32,8 +39,12 @@ export class AiService {
    */
   buildPrompt(
     businessData: string | object,
-    format: 'json' | 'text' | 'csv' = 'text',
+    options: {
+      format?: 'json' | 'text' | 'csv';
+      supplementaryPrompt?: SupplementaryPromptInput;
+    } = {},
   ): string {
+    const { format = 'text', supplementaryPrompt } = options;
     let businessDataPrompt = '';
 
     if (typeof businessData === 'string') {
@@ -43,17 +54,14 @@ export class AiService {
       businessDataPrompt = JSON.stringify(businessData, null, 2);
     }
 
-    // 根据格式添加说明
-    let formatNote = '';
-    if (format === 'json') {
-      formatNote = '\n\n【注意：以下数据为 JSON 格式，请仔细解析】';
-    } else if (format === 'csv') {
-      formatNote = '\n\n【注意：以下数据为 CSV 格式，请仔细解析】';
-    }
+    const formatNote = this.buildFormatNote(format);
+    const fullBusinessPrompt = formatNote
+      ? `${formatNote}\n\n${businessDataPrompt}`
+      : businessDataPrompt;
 
-    const fullBusinessPrompt = `${formatNote}\n${businessDataPrompt}`;
-
-    return buildFullPrompt(fullBusinessPrompt);
+    return buildFullPrompt(fullBusinessPrompt, {
+      supplementaryPrompt: this.normalizeSupplementaryPrompt(supplementaryPrompt),
+    });
   }
 
   /**
@@ -69,6 +77,8 @@ export class AiService {
     shopeeData?: object | string; // Shopee 数据
     productData?: object | string; // 产品数据
     context?: string; // 其他上下文信息
+    format?: 'json' | 'text' | 'csv';
+    supplementaryPrompt?: SupplementaryPromptInput;
   }): string {
     const parts: string[] = [];
 
@@ -109,9 +119,65 @@ export class AiService {
       parts.push(`## 其他上下文信息\n\n${params.context}\n`);
     }
 
+    const formatNote = this.buildFormatNote(params.format);
+    if (formatNote) {
+      parts.unshift(formatNote);
+    }
+
     const businessDataPrompt = parts.join('\n');
 
-    return buildFullPrompt(businessDataPrompt);
+    return buildFullPrompt(businessDataPrompt, {
+      supplementaryPrompt: this.normalizeSupplementaryPrompt(
+        params.supplementaryPrompt,
+      ),
+    });
+  }
+
+  /**
+   * 将补充提示词标准化为字符串
+   */
+  private normalizeSupplementaryPrompt(
+    supplementaryPrompt: SupplementaryPromptInput,
+  ): string | null {
+    if (!supplementaryPrompt) {
+      return null;
+    }
+
+    if (typeof supplementaryPrompt === 'string') {
+      return supplementaryPrompt.trim() || null;
+    }
+
+    if (Array.isArray(supplementaryPrompt)) {
+      const merged = supplementaryPrompt.filter(Boolean).join('\n');
+      return merged ? merged : null;
+    }
+
+    try {
+      return JSON.stringify(supplementaryPrompt, null, 2);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 根据数据格式生成提示
+   */
+  private buildFormatNote(
+    format: 'json' | 'text' | 'csv' | undefined,
+  ): string | null {
+    if (!format || format === 'text') {
+      return null;
+    }
+
+    if (format === 'json') {
+      return '【注意：以下数据为 JSON 格式，请仔细解析】';
+    }
+
+    if (format === 'csv') {
+      return '【注意：以下数据为 CSV 格式，请仔细解析】';
+    }
+
+    return null;
   }
 }
 
