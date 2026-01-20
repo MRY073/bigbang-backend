@@ -4,7 +4,6 @@ exports.PotentialLinkAISuggestionDto = exports.PotentialLinkMonitorDto = void 0;
 class PotentialLinkMonitorDto {
     shopID;
     shopName;
-    date;
 }
 exports.PotentialLinkMonitorDto = PotentialLinkMonitorDto;
 class PotentialLinkAISuggestionDto {

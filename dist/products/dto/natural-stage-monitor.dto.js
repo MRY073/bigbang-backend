@@ -4,7 +4,6 @@ exports.BatchNaturalStageAISuggestionDto = exports.NaturalStageAISuggestionDto =
 class NaturalStageMonitorDto {
     shopID;
     shopName;
-    date;
     customCategory;
 }
 exports.NaturalStageMonitorDto = NaturalStageMonitorDto;

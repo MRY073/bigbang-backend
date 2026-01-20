@@ -2,7 +2,6 @@
 export class PotentialLinkMonitorDto {
   shopID: string; // 店铺ID
   shopName: string; // 店铺名称
-  date: string; // 日期（YYYY-MM-DD 格式，必需）
 }
 
 // AI建议查询 DTO

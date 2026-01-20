@@ -549,20 +549,55 @@ let ProductsService = class ProductsService {
         });
         return Array.from(categoriesSet).sort((a, b) => collator.compare(a, b));
     }
-    async getFinishedLinkMonitorData(shopID, shopName, date, customCategory) {
+    async findLatestDateWithData(shopID, days = 7) {
+        const today = new Date();
+        const todayStr = this.formatDate(today);
+        const sql = `
+      SELECT DISTINCT date
+      FROM daily_product_stats
+      WHERE shop_id = ? 
+        AND date >= DATE_SUB(?, INTERVAL ? DAY)
+        AND date <= ?
+      ORDER BY date DESC
+      LIMIT 1
+    `;
+        const result = await this.mysqlService.query(sql, [
+            shopID,
+            todayStr,
+            days,
+            todayStr,
+        ]);
+        if (result && result.length > 0) {
+            const dateValue = result[0].date;
+            if (dateValue instanceof Date) {
+                return this.formatDate(dateValue);
+            }
+            if (typeof dateValue === 'string') {
+                return dateValue.split('T')[0];
+            }
+            return String(dateValue);
+        }
+        return null;
+    }
+    formatDate(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    getToday() {
+        return this.formatDate(new Date());
+    }
+    async getFinishedLinkMonitorData(shopID, shopName, customCategory) {
         console.log('=== getFinishedLinkMonitorData 函数开始执行 ===');
         console.log('接收到的店铺ID:', shopID);
         console.log('接收到的店铺名称:', shopName);
-        console.log('接收到的日期参数:', date || '未提供（使用当前日期）');
         console.log('接收到的自定义分类参数:', customCategory || '未提供');
-        let currentDate;
-        if (date) {
-            const [year, month, day] = date.split('-').map(Number);
-            currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-        }
-        else {
-            currentDate = new Date();
-        }
+        const latestDate = await this.findLatestDateWithData(shopID, 7);
+        const queryDate = latestDate || this.getToday();
+        console.log('使用的查询日期:', queryDate);
+        const [year, month, day] = queryDate.split('-').map(Number);
+        const currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
         console.log('使用的基准日期:', currentDate.toISOString());
         console.log('\n--- 第一步：查询当前处于成品阶段的商品 ---');
         let whereClause = `WHERE shop_id = ? 
@@ -590,7 +625,9 @@ let ProductsService = class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        analysis,
+        improvement_plan
       FROM product_items 
       ${whereClause}
       ORDER BY id ASC`, queryParams);
@@ -600,154 +637,43 @@ let ProductsService = class ProductsService {
             console.log('=== getFinishedLinkMonitorData 函数执行完成（无数据）===\n');
             return [];
         }
-        console.log('\n--- 第二步：对每个商品计算统计数据 ---');
-        console.log(`开始处理 ${finishedProducts.length} 个商品的统计数据`);
-        const timeDimensions = [30, 15, 7, 3, 1];
-        const result = await Promise.all(finishedProducts.map(async (product) => {
-            const { product_id, product_name, product_image, custom_category_1, custom_category_2, custom_category_3, custom_category_4, } = product;
+        console.log('\n--- 第二步：构建返回结果 ---');
+        console.log(`开始处理 ${finishedProducts.length} 个商品`);
+        const result = finishedProducts.map((product) => {
+            const { product_id, product_name, product_image, custom_category_1, custom_category_2, custom_category_3, custom_category_4, analysis, improvement_plan, } = product;
             console.log(`\n处理商品: ${product_id} (${product_name})`);
-            const visitorsAvg = [];
-            const adCostAvg = [];
-            const salesAvg = [];
-            const endDate60 = new Date(currentDate);
-            const startDate60 = new Date(currentDate);
-            startDate60.setDate(endDate60.getDate() - 59);
-            const startDate60Str = startDate60.toISOString().split('T')[0];
-            const endDate60Str = endDate60.toISOString().split('T')[0];
-            const visitorsData60 = await this.mysqlService.query(`SELECT visitors
-          FROM daily_product_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const visitorsValues60 = visitorsData60
-                .map((row) => row.visitors)
-                .filter((value) => value !== null && value !== undefined)
-                .map((value) => Number(value) || 0);
-            const adCostData60 = await this.mysqlService.query(`SELECT spend
-          FROM ad_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const adCostValues60 = adCostData60
-                .map((row) => row.spend)
-                .filter((value) => value !== null && value !== undefined)
-                .map((value) => Number(value) || 0);
-            const salesData60 = await this.mysqlService.query(`SELECT confirmed_sales
-          FROM daily_product_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const salesValues60 = salesData60
-                .map((row) => row.confirmed_sales)
-                .filter((value) => value !== null && value !== undefined)
-                .map((value) => Number(value) || 0);
-            const visitorsVolatilityBaseline = this.calculateSlidingVolatility(visitorsValues60);
-            const adCostVolatilityBaseline = this.calculateSlidingVolatility(adCostValues60);
-            const salesVolatilityBaseline = this.calculateSlidingVolatility(salesValues60);
-            for (const days of timeDimensions) {
-                const endDate = new Date(currentDate);
-                const startDate = new Date(currentDate);
-                startDate.setDate(endDate.getDate() - (days - 1));
-                const startDateStr = startDate.toISOString().split('T')[0];
-                const endDateStr = endDate.toISOString().split('T')[0];
-                console.log(`  [${product_id}] 计算 ${days} 天数据 (${startDateStr} 到 ${endDateStr})`);
-                try {
-                    const visitorsData = await this.mysqlService.query(`SELECT visitors
-              FROM daily_product_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const visitorsValues = visitorsData
-                        .map((row) => row.visitors)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let visitorsAvgValue = 0;
-                    if (visitorsValues.length > 0) {
-                        const sum = visitorsValues.reduce((acc, val) => acc + val, 0);
-                        visitorsAvgValue = sum / visitorsValues.length;
-                    }
-                    visitorsAvg.push(visitorsAvgValue);
-                    const adCostData = await this.mysqlService.query(`SELECT spend
-              FROM ad_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const adCostValues = adCostData
-                        .map((row) => row.spend)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let adCostAvgValue = 0;
-                    if (adCostValues.length > 0) {
-                        const sum = adCostValues.reduce((acc, val) => acc + val, 0);
-                        adCostAvgValue = sum / adCostValues.length;
-                    }
-                    adCostAvg.push(adCostAvgValue);
-                    const salesData = await this.mysqlService.query(`SELECT confirmed_sales
-              FROM daily_product_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const salesValues = salesData
-                        .map((row) => row.confirmed_sales)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let salesAvgValue = 0;
-                    if (salesValues.length > 0) {
-                        const sum = salesValues.reduce((acc, val) => acc + val, 0);
-                        salesAvgValue = sum / salesValues.length;
-                    }
-                    salesAvg.push(salesAvgValue);
-                    console.log(`    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)})`);
-                }
-                catch (error) {
-                    console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
-                    visitorsAvg.push(0);
-                    adCostAvg.push(0);
-                    salesAvg.push(0);
-                }
-            }
             const warningLevel = '轻微';
             const warningMessages = [];
             console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
-            if (warningMessages.length > 0) {
-                console.log(`  [${product_id}] 警告信息:`, warningMessages);
-            }
             return {
                 id: product_id,
                 name: product_name,
                 image: product_image,
-                visitorsAvg,
-                visitorsVolatilityBaseline,
-                adCostAvg,
-                adCostVolatilityBaseline,
-                salesAvg,
-                salesVolatilityBaseline,
                 warningLevel,
                 warningMessages,
                 custom_category_1: custom_category_1 || null,
                 custom_category_2: custom_category_2 || null,
                 custom_category_3: custom_category_3 || null,
                 custom_category_4: custom_category_4 || null,
+                analysis: analysis || null,
+                improvementPlan: improvement_plan || null,
             };
-        }));
-        result.sort((a, b) => {
-            const salesA = a.salesAvg[0] || 0;
-            const salesB = b.salesAvg[0] || 0;
-            return salesB - salesA;
         });
         console.log('\n=== getFinishedLinkMonitorData 函数执行完成 ===');
         console.log(`总共处理了 ${result.length} 个商品`);
         console.log('==========================================\n');
         return result;
     }
-    async getNaturalStageMonitorData(shopID, shopName, date, customCategory) {
+    async getNaturalStageMonitorData(shopID, shopName, customCategory) {
         console.log('=== getNaturalStageMonitorData 函数开始执行 ===');
         console.log('接收到的店铺ID:', shopID);
         console.log('接收到的店铺名称:', shopName);
-        console.log('接收到的日期参数:', date || '未提供（使用当前日期）');
         console.log('接收到的自定义分类参数:', customCategory || '未提供');
-        let currentDate;
-        if (date) {
-            const [year, month, day] = date.split('-').map(Number);
-            currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-        }
-        else {
-            currentDate = new Date();
-        }
+        const latestDate = await this.findLatestDateWithData(shopID, 7);
+        const queryDate = latestDate || this.getToday();
+        console.log('使用的查询日期:', queryDate);
+        const [year, month, day] = queryDate.split('-').map(Number);
+        const currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
         console.log('使用的基准日期:', currentDate.toISOString());
         console.log('\n--- 第一步：查询当前处于自然流阶段的商品 ---');
         let whereClause = `WHERE shop_id = ? 
@@ -775,7 +701,9 @@ let ProductsService = class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        analysis,
+        improvement_plan
       FROM product_items 
       ${whereClause}
       ORDER BY id ASC`, queryParams);
@@ -785,134 +713,31 @@ let ProductsService = class ProductsService {
             console.log('=== getNaturalStageMonitorData 函数执行完成（无数据）===\n');
             return [];
         }
-        console.log('\n--- 第二步：对每个商品计算统计数据 ---');
-        console.log(`开始处理 ${naturalProducts.length} 个商品的统计数据`);
-        const timeDimensions = [30, 15, 7, 3, 1];
-        const result = await Promise.all(naturalProducts.map(async (product) => {
-            const { product_id, product_name, product_image, custom_category_1, custom_category_2, custom_category_3, custom_category_4, } = product;
+        console.log('\n--- 第二步：构建返回结果 ---');
+        console.log(`开始处理 ${naturalProducts.length} 个商品`);
+        const result = naturalProducts.map((product) => {
+            const { product_id, product_name, product_image, custom_category_1, custom_category_2, custom_category_3, custom_category_4, analysis, improvement_plan, } = product;
             console.log(`\n处理商品: ${product_id} (${product_name})`);
-            const visitorsAvg = [];
-            const adCostAvg = [];
-            const salesAvg = [];
-            const endDate60 = new Date(currentDate);
-            const startDate60 = new Date(currentDate);
-            startDate60.setDate(endDate60.getDate() - 59);
-            const startDate60Str = startDate60.toISOString().split('T')[0];
-            const endDate60Str = endDate60.toISOString().split('T')[0];
-            const visitorsData60 = await this.mysqlService.query(`SELECT visitors
-          FROM daily_product_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const visitorsValues60 = visitorsData60
-                .map((row) => row.visitors)
-                .filter((value) => value !== null && value !== undefined)
-                .map((value) => Number(value) || 0);
-            const adCostData60 = await this.mysqlService.query(`SELECT spend
-          FROM ad_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const adCostValues60 = adCostData60
-                .map((row) => row.spend)
-                .filter((value) => value !== null && value !== undefined)
-                .map((value) => Number(value) || 0);
-            const salesData60 = await this.mysqlService.query(`SELECT confirmed_sales
-          FROM daily_product_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const salesValues60 = salesData60
-                .map((row) => row.confirmed_sales)
-                .filter((value) => value !== null && value !== undefined)
-                .map((value) => Number(value) || 0);
-            const visitorsVolatilityBaseline = this.calculateSlidingVolatility(visitorsValues60);
-            const adCostVolatilityBaseline = this.calculateSlidingVolatility(adCostValues60);
-            const salesVolatilityBaseline = this.calculateSlidingVolatility(salesValues60);
-            for (const days of timeDimensions) {
-                const endDate = new Date(currentDate);
-                const startDate = new Date(currentDate);
-                startDate.setDate(endDate.getDate() - (days - 1));
-                const startDateStr = startDate.toISOString().split('T')[0];
-                const endDateStr = endDate.toISOString().split('T')[0];
-                console.log(`  [${product_id}] 计算 ${days} 天数据 (${startDateStr} 到 ${endDateStr})`);
-                try {
-                    const visitorsData = await this.mysqlService.query(`SELECT visitors
-              FROM daily_product_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const visitorsValues = visitorsData
-                        .map((row) => row.visitors)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let visitorsAvgValue = 0;
-                    if (visitorsValues.length > 0) {
-                        const sum = visitorsValues.reduce((acc, val) => acc + val, 0);
-                        visitorsAvgValue = sum / visitorsValues.length;
-                    }
-                    visitorsAvg.push(visitorsAvgValue);
-                    const adCostData = await this.mysqlService.query(`SELECT spend
-              FROM ad_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const adCostValues = adCostData
-                        .map((row) => row.spend)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let adCostAvgValue = 0;
-                    if (adCostValues.length > 0) {
-                        const sum = adCostValues.reduce((acc, val) => acc + val, 0);
-                        adCostAvgValue = sum / adCostValues.length;
-                    }
-                    adCostAvg.push(adCostAvgValue);
-                    const salesData = await this.mysqlService.query(`SELECT confirmed_sales
-              FROM daily_product_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const salesValues = salesData
-                        .map((row) => row.confirmed_sales)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let salesAvgValue = 0;
-                    if (salesValues.length > 0) {
-                        const sum = salesValues.reduce((acc, val) => acc + val, 0);
-                        salesAvgValue = sum / salesValues.length;
-                    }
-                    salesAvg.push(salesAvgValue);
-                    console.log(`    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)})`);
-                }
-                catch (error) {
-                    console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
-                    visitorsAvg.push(0);
-                    adCostAvg.push(0);
-                    salesAvg.push(0);
-                }
-            }
             const warningLevel = '轻微';
             const warningMessages = [];
             console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
-            if (warningMessages.length > 0) {
-                console.log(`  [${product_id}] 警告信息:`, warningMessages);
-            }
             return {
                 id: product_id,
                 name: product_name,
                 image: product_image,
-                visitorsAvg,
-                visitorsVolatilityBaseline,
-                adCostAvg,
-                adCostVolatilityBaseline,
-                salesAvg,
-                salesVolatilityBaseline,
                 warningLevel,
                 warningMessages,
                 custom_category_1: custom_category_1 || null,
                 custom_category_2: custom_category_2 || null,
                 custom_category_3: custom_category_3 || null,
                 custom_category_4: custom_category_4 || null,
+                analysis: analysis || null,
+                improvementPlan: improvement_plan || null,
+                visitorsAvg: [],
+                adCostAvg: [],
+                salesAvg: [],
+                visitorsVolatilityBaseline: [],
             };
-        }));
-        result.sort((a, b) => {
-            const salesA = a.salesAvg[0] || 0;
-            const salesB = b.salesAvg[0] || 0;
-            return salesB - salesA;
         });
         console.log('\n=== getNaturalStageMonitorData 函数执行完成 ===');
         console.log(`总共处理了 ${result.length} 个商品`);
@@ -1011,12 +836,14 @@ let ProductsService = class ProductsService {
             return '正常';
         }
     }
-    async getPotentialLinkMonitorData(shopID, shopName, date) {
+    async getPotentialLinkMonitorData(shopID, shopName) {
         console.log('=== getPotentialLinkMonitorData 函数开始执行 ===');
         console.log('接收到的店铺ID:', shopID);
         console.log('接收到的店铺名称:', shopName);
-        console.log('接收到的日期参数:', date);
-        const [year, month, day] = date.split('-').map(Number);
+        const latestDate = await this.findLatestDateWithData(shopID, 7);
+        const queryDate = latestDate || this.getToday();
+        console.log('使用的查询日期:', queryDate);
+        const [year, month, day] = queryDate.split('-').map(Number);
         const currentDate = new Date(year, month - 1, day, 0, 0, 0, 0);
         console.log('使用的基准日期:', currentDate.toISOString());
         console.log('\n--- 第一步：查询当前处于潜力阶段的商品 ---');
@@ -1027,7 +854,9 @@ let ProductsService = class ProductsService {
         custom_category_1,
         custom_category_2,
         custom_category_3,
-        custom_category_4
+        custom_category_4,
+        analysis,
+        improvement_plan
       FROM product_items 
       WHERE shop_id = ? 
         AND potential_stage_start IS NOT NULL
@@ -1041,233 +870,27 @@ let ProductsService = class ProductsService {
             console.log('=== getPotentialLinkMonitorData 函数执行完成（无数据）===\n');
             return [];
         }
-        console.log('\n--- 第二步：对每个商品计算统计数据 ---');
-        console.log(`开始处理 ${potentialProducts.length} 个商品的统计数据`);
-        const timeDimensions = [30, 15, 7, 3, 1];
-        const result = await Promise.all(potentialProducts.map(async (product) => {
-            const { product_id, product_name, product_image, custom_category_1, custom_category_2, custom_category_3, custom_category_4, } = product;
+        console.log('\n--- 第二步：构建返回结果 ---');
+        console.log(`开始处理 ${potentialProducts.length} 个商品`);
+        const result = potentialProducts.map((product) => {
+            const { product_id, product_name, product_image, custom_category_1, custom_category_2, custom_category_3, custom_category_4, analysis, improvement_plan, } = product;
             console.log(`\n处理商品: ${product_id} (${product_name})`);
-            const visitorsAvg = [];
-            const visitorsStd = [];
-            const adCostAvg = [];
-            const adCostStd = [];
-            const salesAvg = [];
-            const salesStd = [];
-            const endDate60 = new Date(currentDate);
-            const startDate60 = new Date(currentDate);
-            startDate60.setDate(endDate60.getDate() - 59);
-            const startDate60Str = startDate60.toISOString().split('T')[0];
-            const endDate60Str = endDate60.toISOString().split('T')[0];
-            console.log(`  [${product_id}] 查询60天数据范围: ${startDate60Str} 到 ${endDate60Str}`);
-            const visitorsData60 = await this.mysqlService.query(`SELECT date, visitors
-          FROM daily_product_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date ASC`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const visitorsValues60 = visitorsData60
-                .map((row) => ({
-                date: row.date,
-                value: row.visitors !== null && row.visitors !== undefined
-                    ? Number(row.visitors) || 0
-                    : 0,
-            }))
-                .sort((a, b) => {
-                const dateA = new Date(a.date).getTime();
-                const dateB = new Date(b.date).getTime();
-                return dateA - dateB;
-            })
-                .map((item) => item.value);
-            console.log(`  [${product_id}] 访客数据: 查询到 ${visitorsData60.length} 条记录，处理后 ${visitorsValues60.length} 个数据点`);
-            const adCostData60 = await this.mysqlService.query(`SELECT date, spend
-          FROM ad_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date ASC`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const adCostValues60 = adCostData60
-                .map((row) => ({
-                date: row.date,
-                value: row.spend !== null && row.spend !== undefined
-                    ? Number(row.spend) || 0
-                    : 0,
-            }))
-                .sort((a, b) => {
-                const dateA = new Date(a.date).getTime();
-                const dateB = new Date(b.date).getTime();
-                return dateA - dateB;
-            })
-                .map((item) => item.value);
-            console.log(`  [${product_id}] 广告花费数据: 查询到 ${adCostData60.length} 条记录，处理后 ${adCostValues60.length} 个数据点`);
-            const salesData60 = await this.mysqlService.query(`SELECT date, confirmed_sales
-          FROM daily_product_stats
-          WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-          ORDER BY date ASC`, [shopID, product_id, startDate60Str, endDate60Str]);
-            const salesValues60 = salesData60
-                .map((row) => ({
-                date: row.date,
-                value: row.confirmed_sales !== null && row.confirmed_sales !== undefined
-                    ? Number(row.confirmed_sales) || 0
-                    : 0,
-            }))
-                .sort((a, b) => {
-                const dateA = new Date(a.date).getTime();
-                const dateB = new Date(b.date).getTime();
-                return dateA - dateB;
-            })
-                .map((item) => item.value);
-            console.log(`  [${product_id}] 销售额数据: 查询到 ${salesData60.length} 条记录，处理后 ${salesValues60.length} 个数据点`);
-            const visitorsVolatilityBaseline = this.calculateSlidingVolatility(visitorsValues60);
-            const adCostVolatilityBaseline = this.calculateSlidingVolatility(adCostValues60);
-            const salesVolatilityBaseline = this.calculateSlidingVolatility(salesValues60);
-            console.log(`  [${product_id}] 波动率基线计算完成: 访客=${visitorsVolatilityBaseline.length}个窗口, 广告花费=${adCostVolatilityBaseline.length}个窗口, 销售额=${salesVolatilityBaseline.length}个窗口`);
-            for (const days of timeDimensions) {
-                const endDate = new Date(currentDate);
-                const startDate = new Date(currentDate);
-                startDate.setDate(endDate.getDate() - (days - 1));
-                const startDateStr = startDate.toISOString().split('T')[0];
-                const endDateStr = endDate.toISOString().split('T')[0];
-                console.log(`  [${product_id}] 计算 ${days} 天数据 (${startDateStr} 到 ${endDateStr})`);
-                try {
-                    const visitorsData = await this.mysqlService.query(`SELECT visitors
-              FROM daily_product_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const visitorsValues = visitorsData
-                        .map((row) => row.visitors)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let visitorsAvgValue = 0;
-                    let visitorsStdValue = 0;
-                    if (visitorsValues.length > 0) {
-                        const sum = visitorsValues.reduce((acc, val) => acc + val, 0);
-                        visitorsAvgValue = sum / visitorsValues.length;
-                        if (visitorsValues.length > 1) {
-                            const mean = visitorsAvgValue;
-                            const variance = visitorsValues.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / (visitorsValues.length - 1);
-                            visitorsStdValue = Math.sqrt(variance);
-                        }
-                    }
-                    visitorsAvg.push(visitorsAvgValue);
-                    visitorsStd.push(visitorsStdValue);
-                    const adCostData = await this.mysqlService.query(`SELECT spend
-              FROM ad_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const adCostValues = adCostData
-                        .map((row) => row.spend)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let adCostAvgValue = 0;
-                    let adCostStdValue = 0;
-                    if (adCostValues.length > 0) {
-                        const sum = adCostValues.reduce((acc, val) => acc + val, 0);
-                        adCostAvgValue = sum / adCostValues.length;
-                        if (adCostValues.length > 1) {
-                            const mean = adCostAvgValue;
-                            const variance = adCostValues.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / (adCostValues.length - 1);
-                            adCostStdValue = Math.sqrt(variance);
-                        }
-                    }
-                    adCostAvg.push(adCostAvgValue);
-                    adCostStd.push(adCostStdValue);
-                    const salesData = await this.mysqlService.query(`SELECT confirmed_sales
-              FROM daily_product_stats
-              WHERE shop_id = ? AND product_id = ? AND date >= ? AND date <= ?
-              ORDER BY date`, [shopID, product_id, startDateStr, endDateStr]);
-                    const salesValues = salesData
-                        .map((row) => row.confirmed_sales)
-                        .filter((value) => value !== null && value !== undefined)
-                        .map((value) => Number(value) || 0);
-                    let salesAvgValue = 0;
-                    let salesStdValue = 0;
-                    if (salesValues.length > 0) {
-                        const sum = salesValues.reduce((acc, val) => acc + val, 0);
-                        salesAvgValue = sum / salesValues.length;
-                        if (salesValues.length > 1) {
-                            const mean = salesAvgValue;
-                            const variance = salesValues.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / (salesValues.length - 1);
-                            salesStdValue = Math.sqrt(variance);
-                        }
-                    }
-                    salesAvg.push(salesAvgValue);
-                    salesStd.push(salesStdValue);
-                    console.log(`    [${product_id}] ${days}天: 访客(avg=${visitorsAvgValue.toFixed(2)}, std=${visitorsStdValue.toFixed(2)}), 广告花费(avg=${adCostAvgValue.toFixed(2)}, std=${adCostStdValue.toFixed(2)}), 销售额(avg=${salesAvgValue.toFixed(2)}, std=${salesStdValue.toFixed(2)})`);
-                }
-                catch (error) {
-                    console.warn(`    [${product_id}] 计算 ${days} 天数据失败:`, error);
-                    visitorsAvg.push(0);
-                    visitorsStd.push(0);
-                    adCostAvg.push(0);
-                    adCostStd.push(0);
-                    salesAvg.push(0);
-                    salesStd.push(0);
-                }
-            }
-            const warningLevel = this.calculateWarningLevelFromCV(visitorsAvg, visitorsStd, adCostAvg, adCostStd, salesAvg, salesStd);
+            const warningLevel = '轻微';
             const warningMessages = [];
-            const index1Day = 4;
-            const index3Day = 3;
-            if (visitorsAvg[index1Day] > 0) {
-                const cv1Day = visitorsStd[index1Day] / visitorsAvg[index1Day];
-                if (cv1Day >= WARNING_LEVEL_THRESHOLDS.一般) {
-                    warningMessages.push(`近1天访客数波动${cv1Day >= WARNING_LEVEL_THRESHOLDS.严重 ? '严重' : '一般'}，建议关注`);
-                }
-            }
-            if (adCostAvg[index1Day] > 0) {
-                const cv1Day = adCostStd[index1Day] / adCostAvg[index1Day];
-                if (cv1Day >= WARNING_LEVEL_THRESHOLDS.一般) {
-                    warningMessages.push(`近1天广告花费波动${cv1Day >= WARNING_LEVEL_THRESHOLDS.严重 ? '严重' : '一般'}，建议关注`);
-                }
-            }
-            if (salesAvg[index1Day] > 0) {
-                const cv1Day = salesStd[index1Day] / salesAvg[index1Day];
-                if (cv1Day >= WARNING_LEVEL_THRESHOLDS.一般) {
-                    warningMessages.push(`近1天销售额波动${cv1Day >= WARNING_LEVEL_THRESHOLDS.严重 ? '严重' : '一般'}，建议关注`);
-                }
-            }
-            if (warningMessages.length === 0) {
-                if (visitorsAvg[index3Day] > 0) {
-                    const cv3Day = visitorsStd[index3Day] / visitorsAvg[index3Day];
-                    if (cv3Day >= WARNING_LEVEL_THRESHOLDS.轻微) {
-                        warningMessages.push('近3天访客数波动，建议关注');
-                    }
-                }
-                if (adCostAvg[index3Day] > 0) {
-                    const cv3Day = adCostStd[index3Day] / adCostAvg[index3Day];
-                    if (cv3Day >= WARNING_LEVEL_THRESHOLDS.轻微) {
-                        warningMessages.push('近3天广告花费波动，建议关注');
-                    }
-                }
-                if (salesAvg[index3Day] > 0) {
-                    const cv3Day = salesStd[index3Day] / salesAvg[index3Day];
-                    if (cv3Day >= WARNING_LEVEL_THRESHOLDS.轻微) {
-                        warningMessages.push('近3天销售额波动，建议关注');
-                    }
-                }
-            }
             console.log(`  [${product_id}] 预警等级: ${warningLevel}`);
-            if (warningMessages.length > 0) {
-                console.log(`  [${product_id}] 警告信息:`, warningMessages);
-            }
             return {
                 id: product_id,
                 name: product_name,
                 image: product_image,
-                visitorsAvg,
-                visitorsVolatilityBaseline,
-                adCostAvg,
-                adCostVolatilityBaseline,
-                salesAvg,
-                salesVolatilityBaseline,
                 warningLevel,
                 warningMessages,
                 custom_category_1: custom_category_1 || null,
                 custom_category_2: custom_category_2 || null,
                 custom_category_3: custom_category_3 || null,
                 custom_category_4: custom_category_4 || null,
+                analysis: analysis || null,
+                improvementPlan: improvement_plan || null,
             };
-        }));
-        result.sort((a, b) => {
-            const salesA = a.salesAvg[0] || 0;
-            const salesB = b.salesAvg[0] || 0;
-            return salesB - salesA;
         });
         console.log('\n=== getPotentialLinkMonitorData 函数执行完成 ===');
         console.log(`总共处理了 ${result.length} 个商品`);
@@ -1325,7 +948,7 @@ let ProductsService = class ProductsService {
             productID,
             productName,
         });
-        const monitorData = await this.getPotentialLinkMonitorData(shopID, shopName, date);
+        const monitorData = await this.getPotentialLinkMonitorData(shopID, shopName);
         const productData = monitorData.find((p) => p.id === productID);
         if (!productData) {
             return {
@@ -1333,30 +956,14 @@ let ProductsService = class ProductsService {
             };
         }
         const suggestions = [];
-        const visitorsTrend = this.analyzeTrend(productData.visitorsAvg);
-        if (visitorsTrend === '上升') {
-            suggestions.push('访客数呈上升趋势，建议继续保持当前推广策略');
-        }
-        else if (visitorsTrend === '下降') {
-            suggestions.push('访客数呈下降趋势，建议优化推广策略或增加广告投入');
-        }
-        const adCostTrend = this.analyzeTrend(productData.adCostAvg);
-        const salesTrend = this.analyzeTrend(productData.salesAvg);
-        if (adCostTrend === '上升' && salesTrend === '上升') {
-            suggestions.push('广告投入和销售额同步增长，ROI表现良好');
-        }
-        else if (adCostTrend === '上升' && salesTrend !== '上升') {
-            suggestions.push('广告投入增加但销售额未同步增长，建议优化广告投放策略');
-        }
         if (productData.warningLevel === '严重') {
             suggestions.push('当前数据波动较大，建议密切关注并采取相应措施');
         }
         else if (productData.warningLevel === '一般') {
             suggestions.push('数据存在一定波动，建议持续关注趋势变化');
         }
-        const visitorsVolatility = productData.visitorsVolatilityBaseline.find((v) => v.window === 3);
-        if (visitorsVolatility && visitorsVolatility.level === '明显') {
-            suggestions.push('访客数波动明显，建议检查推广渠道和广告效果');
+        else if (productData.warningLevel === '轻微') {
+            suggestions.push('数据存在轻微波动，建议持续关注');
         }
         const defaultSuggestion = '基于当前数据分析，该潜力产品在近期表现出良好的增长趋势。建议：1. 继续保持当前广告投入水平；2. 关注访客转化率的提升；3. 可以考虑扩大库存以应对潜在的需求增长。';
         const finalSuggestion = suggestions.length > 0
@@ -1385,20 +992,24 @@ let ProductsService = class ProductsService {
             };
         }
         const suggestions = [];
-        const visitorsTrend = this.analyzeTrend(productData.visitorsAvg);
-        if (visitorsTrend === '上升') {
-            suggestions.push('访客数呈上升趋势，建议继续保持当前推广策略');
+        if (productData.visitorsAvg && productData.visitorsAvg.length > 0) {
+            const visitorsTrend = this.analyzeTrend(productData.visitorsAvg);
+            if (visitorsTrend === '上升') {
+                suggestions.push('访客数呈上升趋势，建议继续保持当前推广策略');
+            }
+            else if (visitorsTrend === '下降') {
+                suggestions.push('访客数呈下降趋势，建议优化推广策略或增加广告投入');
+            }
         }
-        else if (visitorsTrend === '下降') {
-            suggestions.push('访客数呈下降趋势，建议优化推广策略或增加广告投入');
-        }
-        const adCostTrend = this.analyzeTrend(productData.adCostAvg);
-        const salesTrend = this.analyzeTrend(productData.salesAvg);
-        if (adCostTrend === '上升' && salesTrend === '上升') {
-            suggestions.push('广告投入和销售额同步增长，ROI表现良好');
-        }
-        else if (adCostTrend === '上升' && salesTrend !== '上升') {
-            suggestions.push('广告投入增加但销售额未同步增长，建议优化广告投放策略');
+        if (productData.adCostAvg && productData.adCostAvg.length > 0 && productData.salesAvg && productData.salesAvg.length > 0) {
+            const adCostTrend = this.analyzeTrend(productData.adCostAvg);
+            const salesTrend = this.analyzeTrend(productData.salesAvg);
+            if (adCostTrend === '上升' && salesTrend === '上升') {
+                suggestions.push('广告投入和销售额同步增长，ROI表现良好');
+            }
+            else if (adCostTrend === '上升' && salesTrend !== '上升') {
+                suggestions.push('广告投入增加但销售额未同步增长，建议优化广告投放策略');
+            }
         }
         if (productData.warningLevel === '严重') {
             suggestions.push('当前数据波动较大，建议密切关注并采取相应措施');
@@ -1406,9 +1017,11 @@ let ProductsService = class ProductsService {
         else if (productData.warningLevel === '一般') {
             suggestions.push('数据存在一定波动，建议持续关注趋势变化');
         }
-        const visitorsVolatility = productData.visitorsVolatilityBaseline.find((v) => v.window === 3);
-        if (visitorsVolatility && visitorsVolatility.level === '明显') {
-            suggestions.push('访客数波动明显，建议检查推广渠道和广告效果');
+        if (productData.visitorsVolatilityBaseline && productData.visitorsVolatilityBaseline.length > 0) {
+            const visitorsVolatility = productData.visitorsVolatilityBaseline.find((v) => v.window === 3);
+            if (visitorsVolatility && visitorsVolatility.level === '明显') {
+                suggestions.push('访客数波动明显，建议检查推广渠道和广告效果');
+            }
         }
         const defaultSuggestion = '基于当前数据分析，该自然流商品在近期表现出良好的增长趋势。建议：1. 继续保持当前广告投入水平；2. 关注访客转化率的提升；3. 可以考虑扩大库存以应对潜在的需求增长。';
         const finalSuggestion = suggestions.length > 0
@@ -1703,6 +1316,137 @@ let ProductsService = class ProductsService {
             throw new Error('更新后无法获取商品数据');
         }
         return updatedProduct;
+    }
+    async getFinishedLinkMonitorChartData(shopID, shopName, productID, startDate, endDate) {
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+            throw new Error('日期格式错误，应为 YYYY-MM-DD 格式');
+        }
+        const parseLocalDate = (dateStr) => {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        };
+        const start = parseLocalDate(startDate);
+        const end = parseLocalDate(endDate);
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysDiff > 365) {
+            throw new Error('日期范围不能超过365天');
+        }
+        if (daysDiff < 0) {
+            throw new Error('开始日期不能晚于结束日期');
+        }
+        const product = await this.mysqlService.queryOne(`SELECT product_id FROM product_items WHERE shop_id = ? AND product_id = ?`, [shopID, productID]);
+        if (!product) {
+            throw new Error('商品不存在');
+        }
+        const stats = await this.mysqlService.query(`SELECT 
+        date,
+        visitors,
+        cart_visitors,
+        confirmed_conversion,
+        ordered_items,
+        confirmed_buyers,
+        confirmed_sales
+      FROM daily_product_stats
+      WHERE shop_id = ? 
+        AND product_id = ? 
+        AND date >= ? 
+        AND date <= ?
+      ORDER BY date ASC`, [shopID, productID, startDate, endDate]);
+        const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        const dates = [];
+        const dataMap = new Map();
+        stats.forEach((stat) => {
+            const dateStr = typeof stat.date === 'string'
+                ? stat.date.split('T')[0]
+                : formatDate(stat.date);
+            dataMap.set(dateStr, stat);
+        });
+        const currentDate = new Date(start);
+        const endDateObj = new Date(end);
+        while (currentDate <= endDateObj) {
+            const dateStr = formatDate(currentDate);
+            dates.push(dateStr);
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        const visitors = [];
+        const cartRate = [];
+        const conversionRate = [];
+        const orderCount = [];
+        const buyerCount = [];
+        const gmv = [];
+        dates.forEach((dateStr) => {
+            const stat = dataMap.get(dateStr);
+            if (stat) {
+                visitors.push(stat.visitors !== null ? Number(stat.visitors) : null);
+                if (stat.visitors !== null && stat.visitors !== 0 && stat.cart_visitors !== null) {
+                    cartRate.push(Number(stat.cart_visitors) / Number(stat.visitors));
+                }
+                else {
+                    cartRate.push(null);
+                }
+                conversionRate.push(stat.confirmed_conversion !== null ? Number(stat.confirmed_conversion) : null);
+                orderCount.push(stat.ordered_items !== null ? Number(stat.ordered_items) : null);
+                buyerCount.push(stat.confirmed_buyers !== null ? Number(stat.confirmed_buyers) : null);
+                gmv.push(stat.confirmed_sales !== null ? Number(stat.confirmed_sales) : null);
+            }
+            else {
+                visitors.push(null);
+                cartRate.push(null);
+                conversionRate.push(null);
+                orderCount.push(null);
+                buyerCount.push(null);
+                gmv.push(null);
+            }
+        });
+        return {
+            dates,
+            visitors,
+            cartRate,
+            conversionRate,
+            orderCount,
+            buyerCount,
+            gmv,
+        };
+    }
+    async getPotentialLinkMonitorChartData(shopID, shopName, productID, startDate, endDate) {
+        return this.getFinishedLinkMonitorChartData(shopID, shopName, productID, startDate, endDate);
+    }
+    async getNaturalStageMonitorChartData(shopID, shopName, productID, startDate, endDate) {
+        return this.getFinishedLinkMonitorChartData(shopID, shopName, productID, startDate, endDate);
+    }
+    async saveFinishedLinkMonitorAnalysis(shopID, shopName, productID, analysis, improvementPlan) {
+        if (!shopID || !shopName || !productID) {
+            throw new Error('shopID、shopName 和 productID 为必填参数');
+        }
+        if (analysis && analysis.length > 10000) {
+            throw new Error('analysis 长度不能超过10000字符');
+        }
+        if (improvementPlan && improvementPlan.length > 10000) {
+            throw new Error('improvementPlan 长度不能超过10000字符');
+        }
+        const product = await this.mysqlService.queryOne(`SELECT product_id FROM product_items WHERE shop_id = ? AND product_id = ?`, [shopID, productID]);
+        if (!product) {
+            throw new Error('商品不存在');
+        }
+        await this.mysqlService.update('product_items', {
+            analysis: analysis || null,
+            improvement_plan: improvementPlan || null,
+        }, {
+            shop_id: shopID,
+            product_id: productID,
+        });
+    }
+    async savePotentialLinkMonitorAnalysis(shopID, shopName, productID, analysis, improvementPlan) {
+        return this.saveFinishedLinkMonitorAnalysis(shopID, shopName, productID, analysis, improvementPlan);
+    }
+    async saveNaturalStageMonitorAnalysis(shopID, shopName, productID, analysis, improvementPlan) {
+        return this.saveFinishedLinkMonitorAnalysis(shopID, shopName, productID, analysis, improvementPlan);
     }
 };
 exports.ProductsService = ProductsService;

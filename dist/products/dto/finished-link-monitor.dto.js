@@ -4,7 +4,6 @@ exports.FinishedLinkMonitorDto = void 0;
 class FinishedLinkMonitorDto {
     shopID;
     shopName;
-    date;
     customCategory;
 }
 exports.FinishedLinkMonitorDto = FinishedLinkMonitorDto;

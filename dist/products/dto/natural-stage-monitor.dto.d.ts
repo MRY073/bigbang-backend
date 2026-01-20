@@ -1,7 +1,6 @@
 export declare class NaturalStageMonitorDto {
     shopID: string;
     shopName: string;
-    date: string;
     customCategory?: string;
 }
 export declare class NaturalStageAISuggestionDto {

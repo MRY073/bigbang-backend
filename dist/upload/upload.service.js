@@ -944,13 +944,47 @@ let UploadService = class UploadService {
             const placeholders = columns.map(() => '?').join(', ');
             const values = [];
             const valuePlaceholders = data.map(() => `(${placeholders})`).join(', ');
+            const INT_MAX = 2147483647;
+            const INT_MIN = -2147483648;
+            const intFields = [
+                'impressions',
+                'clicks',
+                'conversions',
+                'direct_conversions',
+                'items_sold',
+                'direct_items_sold',
+            ];
+            const validateIntValue = (value, fieldName, rowIndex) => {
+                if (value === null || value === undefined) {
+                    return null;
+                }
+                const numValue = typeof value === 'number' ? value : Number(value);
+                if (isNaN(numValue)) {
+                    return null;
+                }
+                if (numValue > INT_MAX) {
+                    console.warn(`⚠️ 第 ${rowIndex + 1} 行的字段 ${fieldName} 值 ${numValue} 超出 INT 最大值，已限制为 ${INT_MAX}`);
+                    return INT_MAX;
+                }
+                if (numValue < INT_MIN) {
+                    console.warn(`⚠️ 第 ${rowIndex + 1} 行的字段 ${fieldName} 值 ${numValue} 超出 INT 最小值，已限制为 ${INT_MIN}`);
+                    return INT_MIN;
+                }
+                return Math.floor(numValue);
+            };
             data.forEach((item, itemIndex) => {
                 columns.forEach((col) => {
                     const value = item[col];
                     if (col === 'shop_name' || col === 'shop_id') {
                         console.log(`数据项 ${itemIndex}, 列 ${col}: ${String(value)} (类型: ${typeof value})`);
                     }
-                    values.push(value !== undefined && value !== null ? value : null);
+                    if (intFields.includes(col)) {
+                        const validatedValue = validateIntValue(value, col, itemIndex);
+                        values.push(validatedValue);
+                    }
+                    else {
+                        values.push(value !== undefined && value !== null ? value : null);
+                    }
                 });
             });
             const shopNameIndex = columns.indexOf('shop_name');

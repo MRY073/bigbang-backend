@@ -1402,6 +1402,49 @@ export class UploadService {
       // 构建 VALUES 部分
       const valuePlaceholders = data.map(() => `(${placeholders})`).join(', ');
 
+      // INT 类型字段的最大值和最小值（MySQL INT 有符号范围）
+      const INT_MAX = 2147483647;
+      const INT_MIN = -2147483648;
+
+      // 需要验证为 INT 类型的字段列表
+      const intFields = [
+        'impressions',
+        'clicks',
+        'conversions',
+        'direct_conversions',
+        'items_sold',
+        'direct_items_sold',
+      ];
+
+      // 验证并限制 INT 类型值的辅助函数
+      const validateIntValue = (
+        value: unknown,
+        fieldName: string,
+        rowIndex: number,
+      ): number | null => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+        const numValue = typeof value === 'number' ? value : Number(value);
+        if (isNaN(numValue)) {
+          return null;
+        }
+        // 如果值超出 INT 范围，记录警告并限制到最大值
+        if (numValue > INT_MAX) {
+          console.warn(
+            `⚠️ 第 ${rowIndex + 1} 行的字段 ${fieldName} 值 ${numValue} 超出 INT 最大值，已限制为 ${INT_MAX}`,
+          );
+          return INT_MAX;
+        }
+        if (numValue < INT_MIN) {
+          console.warn(
+            `⚠️ 第 ${rowIndex + 1} 行的字段 ${fieldName} 值 ${numValue} 超出 INT 最小值，已限制为 ${INT_MIN}`,
+          );
+          return INT_MIN;
+        }
+        return Math.floor(numValue); // 确保是整数
+      };
+
       // 收集所有值
       data.forEach((item, itemIndex) => {
         columns.forEach((col) => {
@@ -1412,7 +1455,13 @@ export class UploadService {
               `数据项 ${itemIndex}, 列 ${col}: ${String(value)} (类型: ${typeof value})`,
             );
           }
-          values.push(value !== undefined && value !== null ? value : null);
+          // 如果是 INT 类型字段，进行范围验证
+          if (intFields.includes(col)) {
+            const validatedValue = validateIntValue(value, col, itemIndex);
+            values.push(validatedValue);
+          } else {
+            values.push(value !== undefined && value !== null ? value : null);
+          }
         });
       });
 

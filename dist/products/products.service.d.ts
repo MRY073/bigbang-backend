@@ -51,103 +51,58 @@ export declare class ProductsService {
         total_orders: number;
     }>>;
     getCustomCategories(shopID: string): Promise<string[]>;
-    getFinishedLinkMonitorData(shopID: string, shopName: string, date?: string, customCategory?: string): Promise<Array<{
+    private findLatestDateWithData;
+    private formatDate;
+    private getToday;
+    getFinishedLinkMonitorData(shopID: string, shopName: string, customCategory?: string): Promise<Array<{
         id: string;
         name: string;
         image?: string | null;
-        visitorsAvg: number[];
-        visitorsVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
-        adCostAvg: number[];
-        adCostVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
-        salesAvg: number[];
-        salesVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
         warningLevel: '严重' | '一般' | '轻微' | '正常';
         warningMessages: string[];
         custom_category_1?: string | null;
         custom_category_2?: string | null;
         custom_category_3?: string | null;
         custom_category_4?: string | null;
+        analysis?: string | null;
+        improvementPlan?: string | null;
     }>>;
-    getNaturalStageMonitorData(shopID: string, shopName: string, date?: string, customCategory?: string): Promise<Array<{
+    getNaturalStageMonitorData(shopID: string, shopName: string, customCategory?: string): Promise<Array<{
         id: string;
         name: string;
         image?: string | null;
-        visitorsAvg: number[];
-        visitorsVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
-        adCostAvg: number[];
-        adCostVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
-        salesAvg: number[];
-        salesVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
         warningLevel: '严重' | '一般' | '轻微' | '正常';
         warningMessages: string[];
         custom_category_1?: string | null;
         custom_category_2?: string | null;
         custom_category_3?: string | null;
         custom_category_4?: string | null;
+        analysis?: string | null;
+        improvementPlan?: string | null;
+        visitorsAvg?: number[];
+        adCostAvg?: number[];
+        salesAvg?: number[];
+        visitorsVolatilityBaseline?: Array<{
+            window: number;
+            direction?: '+' | '-';
+            strength?: number;
+            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
+        }>;
     }>>;
     private calculateWarningLevelFromVolatility;
     private calculateWarningLevel;
-    getPotentialLinkMonitorData(shopID: string, shopName: string, date: string): Promise<Array<{
+    getPotentialLinkMonitorData(shopID: string, shopName: string): Promise<Array<{
         id: string;
         name: string;
         image?: string | null;
-        visitorsAvg: number[];
-        visitorsVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
-        adCostAvg: number[];
-        adCostVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
-        salesAvg: number[];
-        salesVolatilityBaseline: Array<{
-            window: number;
-            direction: '+' | '-';
-            strength: number;
-            level: '极小' | '轻微' | '一般' | '明显' | '剧烈';
-        }>;
         warningLevel: '严重' | '一般' | '轻微' | '正常';
         warningMessages?: string[];
         custom_category_1?: string | null;
         custom_category_2?: string | null;
         custom_category_3?: string | null;
         custom_category_4?: string | null;
+        analysis?: string | null;
+        improvementPlan?: string | null;
     }>>;
     private calculateWarningLevelFromCV;
     getPotentialLinkAISuggestion(shopID: string, shopName: string, date: string, productID: string, productName: string): Promise<{
@@ -235,4 +190,34 @@ export declare class ProductsService {
         product_image: string | null;
         status: number | null;
     }>;
+    getFinishedLinkMonitorChartData(shopID: string, shopName: string, productID: string, startDate: string, endDate: string): Promise<{
+        dates: string[];
+        visitors: (number | null)[];
+        cartRate: (number | null)[];
+        conversionRate: (number | null)[];
+        orderCount: (number | null)[];
+        buyerCount: (number | null)[];
+        gmv: (number | null)[];
+    }>;
+    getPotentialLinkMonitorChartData(shopID: string, shopName: string, productID: string, startDate: string, endDate: string): Promise<{
+        dates: string[];
+        visitors: (number | null)[];
+        cartRate: (number | null)[];
+        conversionRate: (number | null)[];
+        orderCount: (number | null)[];
+        buyerCount: (number | null)[];
+        gmv: (number | null)[];
+    }>;
+    getNaturalStageMonitorChartData(shopID: string, shopName: string, productID: string, startDate: string, endDate: string): Promise<{
+        dates: string[];
+        visitors: (number | null)[];
+        cartRate: (number | null)[];
+        conversionRate: (number | null)[];
+        orderCount: (number | null)[];
+        buyerCount: (number | null)[];
+        gmv: (number | null)[];
+    }>;
+    saveFinishedLinkMonitorAnalysis(shopID: string, shopName: string, productID: string, analysis?: string, improvementPlan?: string): Promise<void>;
+    savePotentialLinkMonitorAnalysis(shopID: string, shopName: string, productID: string, analysis?: string, improvementPlan?: string): Promise<void>;
+    saveNaturalStageMonitorAnalysis(shopID: string, shopName: string, productID: string, analysis?: string, improvementPlan?: string): Promise<void>;
 }
